@@ -106,13 +106,17 @@ export const config = Object.freeze({
     .filter(Boolean),
   rateLimitWindowMs: parseInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
   rateLimitMax: parseInteger(process.env.RATE_LIMIT_MAX, 300),
+  // Límites estrictos de credenciales, configurables: detrás de un NAT doméstico o de
+  // oficina varias personas legítimas comparten la misma dirección.
+  loginRateLimitMax: parseInteger(process.env.LOGIN_RATE_LIMIT_MAX, 5),
+  registerRateLimitMax: parseInteger(process.env.REGISTER_RATE_LIMIT_MAX, 10),
   // Optional mail transport. When unset, e-mail verification stays switched off and new
   // accounts are created already verified — see lib/mailer.js.
   smtpUrl: process.env.SMTP_URL?.trim() || null,
   mailFrom: process.env.MAIL_FROM?.trim() || 'RematoOnline <no-reply@rematoonline.cl>',
   appUrl: process.env.APP_URL?.trim() || 'http://localhost:4173',
   // Pasarela de pagos. Sin claves configuradas, el abono con tarjeta queda deshabilitado
-  // y se conserva el abono simulado sólo fuera de producción.
+  // y sólo fuera de producción queda un abono de desarrollo.
   flow: Object.freeze({
     apiKey: process.env.FLOW_API_KEY?.trim() || null,
     secretKey: process.env.FLOW_SECRET_KEY?.trim() || null,

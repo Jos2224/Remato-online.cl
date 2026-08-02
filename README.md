@@ -7,7 +7,7 @@ MVP de subastas abiertas entre particulares. Cualquier visitante puede ver los p
 - Registro e inicio de sesión solo con correo y contraseña.
 - Perfiles públicos con fecha de creación y cantidad de ventas.
 - Publicaciones de texto con título, descripción, categoría, estado, precio inicial, comuna, entrega y cierre con hora/minuto de Chile.
-- Pujas manuales, sin incremento mínimo, mostrando el correo y el historial público.
+- Pujas manuales con incremento mínimo por tramo, historial público y alias en vez de correo.
 - Saldo interno de prueba: el usuario puede depositar o retirar confiando en su declaración; cada movimiento queda registrado en el backend.
 - Portada con subastas activas arriba y vencidas abajo, indicando si terminaron vendidas o sin match.
 - Un único administrador, identificado por `ADMIN_EMAIL`, que recibe comisiones y penalizaciones.
@@ -34,7 +34,7 @@ La misma sincronización avanza los turnos de adjudicación vencidos. Si la plat
 
 ## Reglas centrales
 
-1. Una puja solo se acepta si el usuario tiene ese monto disponible; queda congelado.
+1. Una puja exige tener disponible la garantía del 10% del monto ofertado; ese 10% queda congelado.
 2. Una puja superior del mismo usuario reemplaza su puja activa y ajusta la reserva. Retirar o reemplazar una puja la quita del historial competitivo público, pero conserva el evento interno para auditoría.
 3. El vendedor puede cambiar el cierre, incluso con pujas, siempre que la nueva hora esté al menos tres minutos por delante de la hora actual del servidor. El nuevo cierre aparece en el portal, sin notificación.
 4. Al vencer, los postores únicos se ordenan por su puja activa más alta. El primero dispone de una hora para aceptar.

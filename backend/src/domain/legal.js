@@ -13,6 +13,8 @@ import { createHash } from 'node:crypto';
 const HEADER = 'RematoOnline · Documento legal';
 
 export const ACCEPTANCE_CONTEXTS = Object.freeze({
+  // Se conserva aunque hoy ningún documento lo exija: hay aceptaciones históricas
+  // guardadas con este contexto y la restricción CHECK de la tabla lo admite.
   REGISTRATION: 'REGISTRATION',
   PUBLISH: 'PUBLISH',
   BID: 'BID',
@@ -25,7 +27,9 @@ const documents = [
     title: 'Términos y Condiciones de Uso',
     summary:
       'Reglas generales del servicio, rol de la plataforma, comisiones y responsabilidades.',
-    requiredFor: [ACCEPTANCE_CONTEXTS.REGISTRATION],
+    // Se firma al operar, no al registrarse: crear una cuenta para mirar el catálogo no
+    // compromete a nada, y exigir la firma antes de tiempo sólo agrega fricción.
+    requiredFor: [ACCEPTANCE_CONTEXTS.PUBLISH, ACCEPTANCE_CONTEXTS.BID],
     body: `${HEADER}
 
 # Términos y Condiciones de Uso
@@ -150,7 +154,7 @@ conforme a la Ley 19.496.`,
     title: 'Política de Privacidad',
     summary:
       'Qué datos tratamos, con qué finalidad, por cuánto tiempo y cómo ejercer tus derechos.',
-    requiredFor: [ACCEPTANCE_CONTEXTS.REGISTRATION],
+    requiredFor: [ACCEPTANCE_CONTEXTS.PUBLISH, ACCEPTANCE_CONTEXTS.BID],
     body: `${HEADER}
 
 # Política de Privacidad

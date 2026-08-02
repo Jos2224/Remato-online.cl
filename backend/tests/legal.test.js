@@ -15,6 +15,12 @@ test('cada documento declara versión, título y contextos válidos', () => {
     assert.ok(document.title.length > 0, `falta título en ${document.slug}`);
     assert.ok(document.body.length > 500, `cuerpo sospechosamente corto en ${document.slug}`);
     assert.ok(document.requiredFor.length > 0, `${document.slug} no se exige en ningún flujo`);
+    // Ningún documento debe exigirse al registrarse.
+    assert.equal(
+      document.requiredFor.includes(ACCEPTANCE_CONTEXTS.REGISTRATION),
+      false,
+      `${document.slug} no debe exigirse al registrarse`,
+    );
     for (const context of document.requiredFor) {
       assert.ok(contexts.has(context), `contexto desconocido en ${document.slug}: ${context}`);
     }
@@ -35,16 +41,25 @@ test('la huella identifica el texto y es estable', () => {
   );
 });
 
-test('los tres flujos exigen firma', () => {
-  for (const context of Object.values(ACCEPTANCE_CONTEXTS)) {
+test('la firma se exige al operar, no al registrarse', () => {
+  // Crear una cuenta para mirar el catálogo no compromete a nada: la firma llega cuando
+  // la persona asume obligaciones reales (garantía, cláusula penal, entrega).
+  assert.equal(documentsRequiredFor(ACCEPTANCE_CONTEXTS.REGISTRATION).length, 0);
+
+  for (const context of [ACCEPTANCE_CONTEXTS.PUBLISH, ACCEPTANCE_CONTEXTS.BID]) {
     assert.ok(
       documentsRequiredFor(context).length > 0,
       `ningún documento se exige para ${context}`,
     );
   }
+
   assert.deepEqual(
-    documentsRequiredFor(ACCEPTANCE_CONTEXTS.BID).map((document) => document.slug),
-    ['reglas-de-compra'],
+    documentsRequiredFor(ACCEPTANCE_CONTEXTS.BID).map((document) => document.slug).sort(),
+    ['politica-de-privacidad', 'reglas-de-compra', 'terminos-y-condiciones'],
+  );
+  assert.deepEqual(
+    documentsRequiredFor(ACCEPTANCE_CONTEXTS.PUBLISH).map((document) => document.slug).sort(),
+    ['politica-de-privacidad', 'reglas-de-venta', 'terminos-y-condiciones'],
   );
 });
 

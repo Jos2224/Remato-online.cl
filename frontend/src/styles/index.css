@@ -2535,3 +2535,11 @@ tbody tr:last-child td {
 .auction-card__shipping { margin-top: 4px; }
 
 .footer__trust { display: flex; align-items: center; }
+
+.field-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}

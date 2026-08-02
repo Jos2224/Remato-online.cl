@@ -74,7 +74,7 @@ router.post(
       await client.query(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, description)
-         VALUES ($1, 'DEPOSIT', $2, 'Abono simulado por el usuario')`,
+         VALUES ($1, 'DEPOSIT', $2, 'Abono de desarrollo (sin pasarela configurada)')`,
         [request.user.id, amount],
       );
       return updated.rows[0];
@@ -86,6 +86,16 @@ router.post(
 router.post(
   '/withdraw',
   asyncHandler(async (request, response) => {
+    // Desde que los abonos entran por pasarela, el dinero del saldo es real. Este
+    // endpoint sólo descuenta saldo y anota un asiento: no existe integración de pago
+    // de salida, así que ejecutarlo destruiría dinero de la persona sin entregárselo.
+    // Se bloquea hasta que exista un mecanismo real de transferencia.
+    if (flowEnabled()) {
+      throw conflict(
+        'WITHDRAWAL_NOT_AVAILABLE',
+        'Los retiros aún no están habilitados. Escríbenos para coordinar la devolución de tu saldo.',
+      );
+    }
     const { amount } = validate(amountSchema, request.body);
     const wallet = await withTransaction(async (client) => {
       const locked = await client.query(
@@ -108,7 +118,7 @@ router.post(
       await client.query(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, description)
-         VALUES ($1, 'WITHDRAWAL', -$2::bigint, 'Retiro simulado por el usuario')`,
+         VALUES ($1, 'WITHDRAWAL', -$2::bigint, 'Retiro de desarrollo (sin pasarela configurada)')`,
         [request.user.id, amount],
       );
       return updated.rows[0];

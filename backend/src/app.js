@@ -53,7 +53,7 @@ const globalLimiter = rateLimit({
 // addresses cannot converge on one account.
 const loginIpLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 5,
+  limit: config.loginRateLimitMax,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   keyGenerator: (request) => `login-ip:${ipKeyGenerator(request.ip)}`,
@@ -62,7 +62,7 @@ const loginIpLimiter = rateLimit({
 
 const loginEmailLimiter = rateLimit({
   windowMs: 60_000,
-  limit: 5,
+  limit: config.loginRateLimitMax,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   skip: (request) => typeof request.body?.email !== 'string',
@@ -74,7 +74,7 @@ const loginEmailLimiter = rateLimit({
 // an army of accounts for shill bidding.
 const registerLimiter = rateLimit({
   windowMs: 60 * 60_000,
-  limit: 5,
+  limit: config.registerRateLimitMax,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   keyGenerator: (request) => `register-ip:${ipKeyGenerator(request.ip)}`,
@@ -94,7 +94,11 @@ app.use(
   }),
 );
 
-app.use('/api', globalLimiter);
+// El aviso de la pasarela lo envía Flow, no una persona: si le devolviéramos 429
+// interpretaría que el servidor falla y reintentaría en bucle. Queda fuera del cubo.
+app.use('/api', (request, response, next) =>
+  request.path === '/payments/flow/confirm' ? next() : globalLimiter(request, response, next),
+);
 app.use('/api/auth/login', loginIpLimiter, loginEmailLimiter);
 app.use('/api/auth/register', registerLimiter);
 

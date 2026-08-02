@@ -168,8 +168,14 @@ export function AccountPage() {
             <h2>Retirar saldo</h2>
             <p>Solo puedes retirar fondos disponibles; nunca dinero congelado.</p>
             <div className="money-action__form">
-              <div className="money-input"><span>$</span><input aria-label="Monto a retirar" inputMode="numeric" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="50000" /></div>
-              <button className="button button--ghost" type="button" disabled={Boolean(busyAction)} onClick={() => moveMoney("withdraw")}>
+              <div className="money-input"><span>$</span><input aria-label="Monto a retirar" inputMode="numeric" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="50000" disabled={gatewayEnabled} /></div>
+              {gatewayEnabled && (
+                <small className="field-note">
+                  Los retiros todavía no están habilitados: no existe un mecanismo automático
+                  para devolverte el dinero. Escríbenos y lo coordinamos.
+                </small>
+              )}
+              <button className="button button--ghost" type="button" disabled={Boolean(busyAction) || gatewayEnabled} onClick={() => moveMoney("withdraw")}>
                 {busyAction === "withdraw" && <Spinner small />} Retirar
               </button>
             </div>
