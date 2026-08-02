@@ -1,13 +1,16 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
 import { ANTI_SNIPE_WINDOW_MS, minimumIncrement, minimumNextBid } from '../domain/auction.js';
+import { holdForBid } from '../domain/money.js';
 import { CATEGORIES, CONDITIONS } from '../domain/taxonomy.js';
 import { stripMarkup, stripMarkupMultiline } from '../lib/sanitize.js';
 import { asyncHandler } from '../lib/async-handler.js';
-import { conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
+import { MAX_IMAGE_BYTES, deleteImage, storeImage } from '../lib/images.js';
+import { mailEnabled } from '../lib/mailer.js';
 import { requireAtLeastThreeMinutesAhead } from '../lib/time.js';
 import { moneySchema, validate } from '../lib/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
@@ -91,6 +94,18 @@ function requireCommonUser(request) {
   }
 }
 
+// Only enforced when a mail transport exists. Without one nothing can be confirmed, so
+// requiring confirmation would lock everybody out of their own marketplace.
+async function requireVerifiedEmail(request) {
+  if (!mailEnabled()) return;
+  const result = await pool.query('SELECT email_verified_at FROM users WHERE id = $1', [
+    request.user.id,
+  ]);
+  if (!result.rows[0]?.email_verified_at) {
+    throw forbidden('Confirma tu correo antes de publicar o pujar.');
+  }
+}
+
 router.get(
   '/',
   optionalAuth,
@@ -110,6 +125,7 @@ router.post(
   requireAuth,
   asyncHandler(async (request, response) => {
     requireCommonUser(request);
+    await requireVerifiedEmail(request);
     const input = validate(createSchema, request.body);
     const closesAt = requireAtLeastThreeMinutesAhead(input.endsAt, DateTime.utc());
 
@@ -133,6 +149,62 @@ router.post(
     );
     const auction = await getAuctionById(inserted.rows[0].id, request.user);
     response.status(201).json({ data: { auction } });
+  }),
+);
+
+// Optional product image, one per auction. Raw binary rather than multipart: it needs no
+// extra dependency and the format is decided by the file's magic bytes, not by the
+// client-declared content type.
+router.put(
+  '/:id/image',
+  requireAuth,
+  express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: MAX_IMAGE_BYTES }),
+  asyncHandler(async (request, response) => {
+    requireCommonUser(request);
+    if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
+      throw badRequest('IMAGE_REQUIRED', 'Envía una imagen JPG, PNG o WebP.');
+    }
+
+    const owned = await pool.query('SELECT seller_id, image_filename FROM auctions WHERE id = $1', [
+      request.params.id,
+    ]);
+    if (owned.rowCount === 0) throw notFound('Subasta no encontrada.');
+    if (owned.rows[0].seller_id !== request.user.id) throw forbidden();
+
+    const stored = await storeImage(request.body);
+    if (!stored) {
+      throw badRequest('IMAGE_INVALID', 'El archivo no es una imagen JPG, PNG o WebP válida.');
+    }
+
+    await pool.query('UPDATE auctions SET image_filename = $2, updated_at = now() WHERE id = $1', [
+      request.params.id,
+      stored.filename,
+    ]);
+    // Replacing an image removes the old file so uploads cannot accumulate forever.
+    await deleteImage(owned.rows[0].image_filename);
+
+    const auction = await getAuctionById(request.params.id, request.user);
+    response.json({ data: { auction } });
+  }),
+);
+
+router.delete(
+  '/:id/image',
+  requireAuth,
+  asyncHandler(async (request, response) => {
+    const owned = await pool.query('SELECT seller_id, image_filename FROM auctions WHERE id = $1', [
+      request.params.id,
+    ]);
+    if (owned.rowCount === 0) throw notFound('Subasta no encontrada.');
+    if (owned.rows[0].seller_id !== request.user.id) throw forbidden();
+
+    await pool.query('UPDATE auctions SET image_filename = NULL, updated_at = now() WHERE id = $1', [
+      request.params.id,
+    ]);
+    await deleteImage(owned.rows[0].image_filename);
+
+    const auction = await getAuctionById(request.params.id, request.user);
+    response.json({ data: { auction } });
   }),
 );
 
@@ -235,6 +307,7 @@ router.post(
   requireAuth,
   asyncHandler(async (request, response) => {
     requireCommonUser(request);
+    await requireVerifiedEmail(request);
     const { amount } = validate(bidSchema, request.body);
 
     const outcome = await withTransaction(async (client) => {
@@ -278,7 +351,10 @@ router.post(
         [auction.id, request.user.id],
       );
       const previousBid = existingResult.rows[0];
-      const additionalHold = amount - (previousBid?.amount ?? 0);
+      // Only a deposit is frozen, so improving a bid only tops the deposit up.
+      const holdAmount = holdForBid(amount);
+      const previousHold = previousBid ? Number(previousBid.held_amount) : 0;
+      const additionalHold = holdAmount - previousHold;
 
       const walletResult = await client.query(
         'SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE',
@@ -287,10 +363,11 @@ router.post(
       if (walletResult.rows[0].available_balance < additionalHold) {
         throw conflict(
           'INSUFFICIENT_AVAILABLE_BALANCE',
-          'No tienes saldo disponible suficiente para esta puja.',
+          `Necesitas $${additionalHold} disponibles como garantía para esta puja.`,
           {
             availableBalance: walletResult.rows[0].available_balance,
             requiredAdditionalBalance: additionalHold,
+            holdAmount,
           },
         );
       }
@@ -302,10 +379,10 @@ router.post(
         );
       }
       const inserted = await client.query(
-        `INSERT INTO bids (auction_id, bidder_id, amount)
-         VALUES ($1, $2, $3)
+        `INSERT INTO bids (auction_id, bidder_id, amount, held_amount)
+         VALUES ($1, $2, $3, $4)
          RETURNING id`,
-        [auction.id, request.user.id, amount],
+        [auction.id, request.user.id, amount, holdAmount],
       );
       if (previousBid) {
         await client.query('UPDATE bids SET replaced_by_id = $2 WHERE id = $1', [
@@ -393,6 +470,7 @@ router.delete(
       await client.query('SELECT * FROM wallets WHERE user_id = $1 FOR UPDATE', [
         request.user.id,
       ]);
+      const heldAmount = Number(bid.held_amount);
       const walletUpdate = await client.query(
         `UPDATE wallets
          SET available_balance = available_balance + $2,
@@ -400,7 +478,7 @@ router.delete(
              updated_at = $3
          WHERE user_id = $1 AND frozen_balance >= $2
          RETURNING user_id`,
-        [request.user.id, bid.amount, now],
+        [request.user.id, heldAmount, now],
       );
       if (walletUpdate.rowCount === 0) {
         throw new Error('Wallet invariant violated while withdrawing a bid');
@@ -413,8 +491,8 @@ router.delete(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, frozen_delta,
            auction_id, bid_id, description)
-         VALUES ($1, 'BID_RELEASE', $2::bigint, -$2::bigint, $3, $4, 'Puja retirada antes del cierre')`,
-        [request.user.id, bid.amount, auction.id, bid.id],
+         VALUES ($1, 'BID_RELEASE', $2::bigint, -$2::bigint, $3, $4, 'Garantía liberada al retirar la puja antes del cierre')`,
+        [request.user.id, heldAmount, auction.id, bid.id],
       );
       return { closed: false };
     });

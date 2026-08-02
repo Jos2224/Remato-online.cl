@@ -38,7 +38,7 @@ La misma sincronización avanza los turnos de adjudicación vencidos. Si la plat
 2. Una puja superior del mismo usuario reemplaza su puja activa y ajusta la reserva. Retirar o reemplazar una puja la quita del historial competitivo público, pero conserva el evento interno para auditoría.
 3. El vendedor puede cambiar el cierre, incluso con pujas, siempre que la nueva hora esté al menos tres minutos por delante de la hora actual del servidor. El nuevo cierre aparece en el portal, sin notificación.
 4. Al vencer, los postores únicos se ordenan por su puja activa más alta. El primero dispone de una hora para aceptar.
-5. Si rechaza o vence su turno, pierde 10% de su monto congelado a favor del administrador, recupera 90% y sigue el próximo postor.
+5. Al pujar se congela una garantía del 10% de la oferta (no el monto completo). Si el postor acepta, paga el 90% restante desde su saldo disponible. Si rechaza o vence su turno, pierde la garantía: 70% va al vendedor y 30% cubre costos de plataforma. Luego sigue el próximo postor.
 6. Si acepta, se debita su puja: 95% va al vendedor y 5% al administrador. La venta queda concretada y todos los demás recuperan íntegramente sus reservas, salvo quienes ya fueron penalizados.
 7. Si se agota la lista, la subasta queda sin match y se liberan íntegramente los fondos de quienes no rechazaron ni dejaron vencer su turno.
 
@@ -49,7 +49,7 @@ Los cambios de saldo deben hacerse dentro de una transacción de base de datos y
 Requiere Docker con Compose.
 
 ```bash
-cp .env.example .env
+cp .env.example .env   # luego RELLENA los secretos vacíos (la app no arranca con valores conocidos)
 docker compose up --build
 ```
 

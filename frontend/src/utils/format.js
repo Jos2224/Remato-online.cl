@@ -140,3 +140,26 @@ export function describeApiError(error) {
 
   return lines.length ? lines.join(" · ") : headline;
 }
+
+// Mirrors backend/src/domain/auction.js. Kept in sync deliberately: the server is the
+// authority and rejects a bid below the step, this only lets the UI say so up front.
+const BID_INCREMENT_TIERS = [
+  { upTo: 10_000, increment: 500 },
+  { upTo: 50_000, increment: 1_000 },
+  { upTo: 200_000, increment: 2_000 },
+  { upTo: 1_000_000, increment: 5_000 },
+];
+
+export function minimumIncrement(currentPrice) {
+  const price = Number(currentPrice) || 0;
+  return (BID_INCREMENT_TIERS.find((tier) => price < tier.upTo) ?? { increment: 10_000 }).increment;
+}
+
+export function minimumNextBid(currentPrice, hasBids) {
+  const price = Number(currentPrice) || 0;
+  return hasBids ? price + minimumIncrement(price) : price;
+}
+
+// Share of a bid frozen as a deposit. Mirrors HOLD_PERCENTAGE in the backend.
+export const HOLD_PERCENTAGE = 10;
+export const holdForBid = (amount) => Math.max(1, Math.floor((Number(amount) || 0) / 10));

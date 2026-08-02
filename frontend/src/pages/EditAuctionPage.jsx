@@ -24,10 +24,11 @@ export function EditAuctionPage() {
     return <div className="container page-space"><ErrorState title="Esta publicación no es tuya" error={{ message: "Solo la cuenta vendedora puede editarla." }} /></div>;
   }
 
-  const update = async (payload) => {
+  const update = async ({ imageFile, ...payload }) => {
     setSubmitting(true);
     try {
       await auctionsApi.update(auction.id, payload);
+      if (imageFile) await auctionsApi.uploadImage(auction.id, imageFile);
       showToast("Cambios guardados. La nueva fecha ya es visible para los postores.");
       navigate(`/subastas/${auction.id}`);
     } finally {

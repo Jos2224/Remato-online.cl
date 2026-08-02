@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, InlineNotice, PageLoader, Spinner } from "../co
 import { StatusBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import { usePollingQuery } from "../hooks/usePollingQuery";
-import { formatChileDateLong, formatMoney } from "../utils/format";
+import { formatChileDateLong, formatMoney, holdForBid } from "../utils/format";
 
 export function MatchesPage() {
   const { showToast } = useToast();
@@ -21,7 +21,7 @@ export function MatchesPage() {
   if (error && !matches) return <div className="container page-space"><ErrorState title="No pudimos consultar la posta" error={error} onRetry={reload} /></div>;
 
   const act = async (match, action) => {
-    if (action === "reject" && !window.confirm(`Rechazar retendrá ${formatMoney(match.amount * 0.1)} (10%) de tu oferta. ¿Continuar?`)) return;
+    if (action === "reject" && !window.confirm(`Rechazar hace que pierdas tu garantía de ${formatMoney(holdForBid(match.amount))} (el 10% de tu oferta). ¿Continuar?`)) return;
     setBusyId(match.id);
     setActionError("");
     try {
@@ -31,7 +31,7 @@ export function MatchesPage() {
       showToast(
         action === "accept"
           ? "Trato aceptado. La venta y las transferencias quedaron registradas."
-          : "Oferta rechazada. Se aplicó la penalización del 10% y la posta continúa.",
+          : "Oferta rechazada. Perdiste la garantía y la posta continúa con el siguiente postor.",
         action === "accept" ? "success" : "warning",
       );
     } catch (nextError) {
@@ -51,7 +51,7 @@ export function MatchesPage() {
 
         <div className="rule-banner">
           <div><span>Si aceptas</span><strong>El match se concreta</strong><p>95% se transfiere al vendedor y 5% a la plataforma. Los demás recuperan íntegro su dinero.</p></div>
-          <div><span>Si rechazas o vence tu hora</span><strong>Pierdes el 10%</strong><p>Recuperas el 90% restante y la oportunidad pasa al siguiente postor.</p></div>
+          <div><span>Si rechazas o vence tu hora</span><strong>Pierdes la garantía</strong><p>La garantía del 10% se reparte: 70% para el vendedor y 30% para costos de la plataforma. La oportunidad pasa al siguiente postor.</p></div>
         </div>
 
         {actionError && <InlineNotice type="error">{actionError}</InlineNotice>}

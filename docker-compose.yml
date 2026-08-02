@@ -41,6 +41,9 @@ services:
     ports:
       # Sólo loopback por defecto: el acceso público entra por nginx, no directo al backend.
       - "${BACKEND_PORT:-127.0.0.1:4000}:4000"
+    volumes:
+      # Product images must survive a container rebuild.
+      - uploads_data:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -79,3 +82,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:

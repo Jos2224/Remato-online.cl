@@ -73,7 +73,7 @@ function Footer() {
         <div className="footer__rules">
           <p><strong>Hora oficial:</strong> America/Santiago</p>
           <p><strong>Match:</strong> 5% de comisión</p>
-          <p><strong>Rechazo:</strong> 10% de penalización</p>
+          <p><strong>Rechazo:</strong> pierdes la garantía del 10%</p>
         </div>
       </div>
     </footer>

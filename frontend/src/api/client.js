@@ -43,7 +43,7 @@ function handleUnauthorized() {
 }
 
 async function request(path, options = {}) {
-  const { body, token = getStoredToken(), headers, ...fetchOptions } = options;
+  const { body, rawBody, token = getStoredToken(), headers, ...fetchOptions } = options;
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...fetchOptions,
     headers: {
@@ -52,7 +52,7 @@ async function request(path, options = {}) {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(rawBody !== undefined ? { body: rawBody } : body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
   const isJson = response.headers.get("content-type")?.includes("application/json");
@@ -170,6 +170,7 @@ export function normalizeAuction(raw = {}) {
     startingPrice: asNumber(raw.startingPrice, raw.initialPrice, raw.precioInicial),
     currentPrice: asNumber(raw.currentPrice, raw.highestBid, raw.precioActual, raw.startingPrice, raw.initialPrice),
     commune: raw.commune ?? raw.comuna ?? raw.location ?? "No informada",
+    imageUrl: raw.imageUrl ?? null,
     delivery: raw.delivery ?? raw.entrega ?? raw.deliveryMethod ?? "A coordinar con el vendedor",
     endsAt,
     createdAt: raw.createdAt ?? null,
@@ -305,6 +306,19 @@ export const auctionsApi = {
   },
   async withdrawBid(id) {
     return request(`/auctions/${encodeURIComponent(id)}/bids/mine`, { method: "DELETE" });
+  },
+  // The image is sent as raw binary; the server decides the format from the file's own
+  // magic bytes, so the browser-declared type is only a routing hint.
+  async uploadImage(id, file) {
+    const payload = await request(`/auctions/${encodeURIComponent(id)}/image`, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      rawBody: file,
+    });
+    return normalizeAuction(unwrap(payload, ["auction"]));
+  },
+  async removeImage(id) {
+    return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}/image`, { method: "DELETE" }), ["auction"]));
   },
 };
 

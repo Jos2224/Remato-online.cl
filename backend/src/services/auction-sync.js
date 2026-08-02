@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
-import { rejectionSplit, saleSplit } from '../domain/money.js';
+import { rejectionSplit, remainderAfterHold, saleSplit } from '../domain/money.js';
 import { conflict, notFound } from '../lib/api-error.js';
 
 async function getAdmin(client) {
@@ -105,53 +105,78 @@ async function startNextMatch(client, auctionId, startedAt) {
 
 async function penalizeMatch(client, match, outcome, at) {
   const admin = await getAdmin(client);
-  await lockWallets(client, [match.candidate_id, admin.id]);
-  const split = rejectionSplit(match.offered_amount);
+  const bidResult = await client.query('SELECT held_amount FROM bids WHERE id = $1', [
+    match.bid_id,
+  ]);
+  const auctionResult = await client.query('SELECT seller_id FROM auctions WHERE id = $1', [
+    match.auction_id,
+  ]);
+  const sellerId = auctionResult.rows[0].seller_id;
+  // The deposit is what was actually frozen, and it is what is forfeited in full.
+  const split = rejectionSplit(bidResult.rows[0].held_amount);
+
+  await lockWallets(client, [match.candidate_id, sellerId, admin.id]);
 
   const candidateUpdate = await client.query(
     `UPDATE wallets
-     SET available_balance = available_balance + $2,
-         frozen_balance = frozen_balance - $3,
-         updated_at = $4
-     WHERE user_id = $1 AND frozen_balance >= $3
+     SET frozen_balance = frozen_balance - $2, updated_at = $3
+     WHERE user_id = $1 AND frozen_balance >= $2
      RETURNING user_id`,
-    [match.candidate_id, split.returnedAmount, split.frozenAmount, at],
+    [match.candidate_id, split.forfeited, at],
   );
   if (candidateUpdate.rowCount === 0) {
     throw new Error('Wallet invariant violated: candidate frozen balance is insufficient');
   }
 
-  if (split.penalty > 0) {
+  if (split.sellerShare > 0) {
     await client.query(
       `UPDATE wallets
        SET available_balance = available_balance + $2, updated_at = $3
        WHERE user_id = $1`,
-      [admin.id, split.penalty, at],
+      [sellerId, split.sellerShare, at],
+    );
+  }
+  if (split.platformShare > 0) {
+    await client.query(
+      `UPDATE wallets
+       SET available_balance = available_balance + $2, updated_at = $3
+       WHERE user_id = $1`,
+      [admin.id, split.platformShare, at],
     );
   }
 
   await addLedgerEntry(client, {
     userId: match.candidate_id,
     type: 'BID_PENALTY',
-    availableDelta: split.returnedAmount,
-    frozenDelta: -split.frozenAmount,
+    availableDelta: 0,
+    frozenDelta: -split.forfeited,
     auctionId: match.auction_id,
     bidId: match.bid_id,
     matchId: match.id,
     description:
       outcome === 'EXPIRED'
-        ? 'Devolución del 90% al expirar el turno de aceptación'
-        : 'Devolución del 90% al rechazar la adjudicación',
+        ? 'Garantía perdida al expirar el turno de aceptación'
+        : 'Garantía perdida al rechazar la adjudicación',
   });
   await addLedgerEntry(client, {
-    userId: admin.id,
-    type: 'PENALTY_RECEIVED',
-    availableDelta: split.penalty,
+    userId: sellerId,
+    type: 'PENALTY_TO_SELLER',
+    availableDelta: split.sellerShare,
     frozenDelta: 0,
     auctionId: match.auction_id,
     bidId: match.bid_id,
     matchId: match.id,
-    description: 'Penalización del 10% por adjudicación no aceptada',
+    description: 'Compensación por adjudicación no concretada',
+  });
+  await addLedgerEntry(client, {
+    userId: admin.id,
+    type: 'PENALTY_RECEIVED',
+    availableDelta: split.platformShare,
+    frozenDelta: 0,
+    auctionId: match.auction_id,
+    bidId: match.bid_id,
+    matchId: match.id,
+    description: 'Costos de plataforma por adjudicación no concretada',
   });
 
   await client.query(
@@ -168,6 +193,8 @@ async function penalizeMatch(client, match, outcome, at) {
 
 async function releaseOtherBids(client, auctionId, bids, at) {
   for (const bid of bids) {
+    // Only the deposit was ever frozen, so only the deposit comes back.
+    const held = Number(bid.held_amount);
     const updated = await client.query(
       `UPDATE wallets
        SET available_balance = available_balance + $2,
@@ -175,7 +202,7 @@ async function releaseOtherBids(client, auctionId, bids, at) {
            updated_at = $3
        WHERE user_id = $1 AND frozen_balance >= $2
        RETURNING user_id`,
-      [bid.bidder_id, bid.amount, at],
+      [bid.bidder_id, held, at],
     );
     if (updated.rowCount === 0) {
       throw new Error('Wallet invariant violated while releasing a losing bid');
@@ -187,11 +214,11 @@ async function releaseOtherBids(client, auctionId, bids, at) {
     await addLedgerEntry(client, {
       userId: bid.bidder_id,
       type: 'BID_RELEASE',
-      availableDelta: bid.amount,
-      frozenDelta: -bid.amount,
+      availableDelta: held,
+      frozenDelta: -held,
       auctionId,
       bidId: bid.id,
-      description: 'Fondos liberados al finalizar la adjudicación a otro postor',
+      description: 'Garantía liberada al finalizar la adjudicación a otro postor',
     });
   }
 }
@@ -217,15 +244,26 @@ async function settleAcceptedMatch(client, auction, match, at) {
     auction.seller_id,
     admin.id,
   ]);
+  // Only the deposit is frozen; accepting means paying the rest now, out of available
+  // balance. Without funds the sale cannot settle, so this is a normal (recoverable)
+  // conflict rather than an invariant violation.
+  const held = Number(winningBid.held_amount);
+  const remainder = remainderAfterHold(match.offered_amount, held);
   const buyerUpdate = await client.query(
     `UPDATE wallets
-     SET frozen_balance = frozen_balance - $2, updated_at = $3
-     WHERE user_id = $1 AND frozen_balance >= $2
+     SET frozen_balance = frozen_balance - $2,
+         available_balance = available_balance - $3,
+         updated_at = $4
+     WHERE user_id = $1 AND frozen_balance >= $2 AND available_balance >= $3
      RETURNING user_id`,
-    [winningBid.bidder_id, match.offered_amount, at],
+    [winningBid.bidder_id, held, remainder, at],
   );
   if (buyerUpdate.rowCount === 0) {
-    throw new Error('Wallet invariant violated: winner frozen balance is insufficient');
+    throw conflict(
+      'INSUFFICIENT_AVAILABLE_BALANCE',
+      `Necesitas $${remainder} disponibles para completar la compra. Abona saldo y vuelve a aceptar.`,
+      { requiredAdditionalBalance: remainder },
+    );
   }
   await client.query(
     `UPDATE wallets
@@ -245,8 +283,8 @@ async function settleAcceptedMatch(client, auction, match, at) {
   await addLedgerEntry(client, {
     userId: winningBid.bidder_id,
     type: 'PURCHASE',
-    availableDelta: 0,
-    frozenDelta: -match.offered_amount,
+    availableDelta: -remainder,
+    frozenDelta: -held,
     auctionId: auction.id,
     bidId: winningBid.id,
     matchId: match.id,

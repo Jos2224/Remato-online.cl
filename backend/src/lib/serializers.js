@@ -7,6 +7,7 @@ export const serializeUser = (row) => ({
   role: row.role,
   createdAt: row.created_at,
   salesCount: row.sales_count,
+  emailVerified: row.email_verified_at != null,
 });
 
 // Public profile: no email address. This endpoint needs no authentication, so anything

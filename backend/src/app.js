@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import { ipKeyGenerator, rateLimit } from 'express-rate-limit';
 import { config } from './config.js';
+import { UPLOAD_DIRECTORY } from './lib/images.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import walletRoutes from './routes/wallet.js';
@@ -77,6 +78,19 @@ const registerLimiter = rateLimit({
   keyGenerator: (request) => `register-ip:${ipKeyGenerator(request.ip)}`,
   handler: tooMany('Demasiadas cuentas creadas desde esta conexión. Intenta más tarde.'),
 });
+
+// Product images are static files served before the rate limiter: a page showing a grid
+// of photos would otherwise burn the caller's whole API budget on images alone.
+app.use(
+  '/api/uploads',
+  express.static(UPLOAD_DIRECTORY, {
+    index: false,
+    dotfiles: 'deny',
+    // File names contain a content hash, so a stored image is immutable.
+    maxAge: '365d',
+    immutable: true,
+  }),
+);
 
 app.use('/api', globalLimiter);
 app.use('/api/auth/login', loginIpLimiter, loginEmailLimiter);

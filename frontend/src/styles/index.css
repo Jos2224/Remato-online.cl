@@ -489,10 +489,59 @@ textarea:focus-visible {
   background: transparent;
 }
 
+/* Three columns on desktop. Two columns of mostly-empty text cards fitted only about
+   four products on a screen; with thumbnails a denser grid reads better. */
 .auction-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 18px;
+}
+
+/* Optional product thumbnail. A fixed aspect ratio keeps the grid aligned whether or
+   not a given publication has a photo. */
+.auction-card__media {
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.auction-card__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 220ms ease;
+}
+
+.auction-card:hover .auction-card__media img {
+  transform: scale(1.03);
+}
+
+.auction-detail__media {
+  margin-block: 20px;
+  border: 1px solid var(--line);
+  max-height: 460px;
+  overflow: hidden;
+}
+
+.auction-detail__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.image-preview {
+  margin-top: 12px;
+  max-width: 260px;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.field__optional {
+  font-weight: 500;
+  color: var(--ink-soft);
 }
 
 .auction-card {

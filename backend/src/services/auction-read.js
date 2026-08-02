@@ -1,6 +1,7 @@
 import { pool } from '../db/pool.js';
 import { notFound } from '../lib/api-error.js';
 import { isAdmin, maskEmail, publicAlias } from '../lib/privacy.js';
+import { imageUrlFor } from '../lib/images.js';
 
 const auctionSelect = `
   SELECT
@@ -100,6 +101,8 @@ export function serializeAuction(row, viewer) {
     currentPrice: Number(row.current_price),
     commune: row.commune,
     delivery: row.delivery_method,
+    // Optional: null when the seller published without a photo.
+    imageUrl: imageUrlFor(row.image_filename),
     endsAt: iso(row.closes_at),
     status: row.status,
     bidCount: Number(row.bid_count),

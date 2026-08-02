@@ -106,6 +106,11 @@ export const config = Object.freeze({
     .filter(Boolean),
   rateLimitWindowMs: parseInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
   rateLimitMax: parseInteger(process.env.RATE_LIMIT_MAX, 300),
+  // Optional mail transport. When unset, e-mail verification stays switched off and new
+  // accounts are created already verified — see lib/mailer.js.
+  smtpUrl: process.env.SMTP_URL?.trim() || null,
+  mailFrom: process.env.MAIL_FROM?.trim() || 'RematoOnline <no-reply@rematoonline.cl>',
+  appUrl: process.env.APP_URL?.trim() || 'http://localhost:4173',
   // Trust the reverse proxy in front of us (nginx, and the Tailscale Funnel beyond it).
   // Configurable because getting this wrong silently breaks per-IP rate limiting: too
   // low and every request shares one bucket, too high and clients can spoof their IP.

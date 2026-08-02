@@ -16,6 +16,14 @@ export function AuctionCard({ auction, muted = false }) {
           <StatusBadge status={auction.status} />
         </div>
 
+        {/* Optional: publications without a photo keep the original text-only layout
+            instead of reserving an empty frame. */}
+        {auction.imageUrl && (
+          <div className="auction-card__media">
+            <img src={auction.imageUrl} alt={auction.title} loading="lazy" decoding="async" />
+          </div>
+        )}
+
         <div className="auction-card__content">
           <div>
             <p className="auction-card__lot">Subasta #{auction.id}</p>

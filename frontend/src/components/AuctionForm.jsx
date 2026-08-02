@@ -17,6 +17,8 @@ const CATEGORIES = [
 
 const CONDITIONS = ["Nuevo", "Como nuevo", "Usado", "Para reparar"];
 
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
 const EMPTY_FORM = {
   title: "",
   description: "",
@@ -32,6 +34,10 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
   const editing = Boolean(auction);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
+  // Optional photo. Kept out of `form` because it is a File, not a text field, and it is
+  // uploaded in a second request once the auction has an id.
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const minimum = useMemo(() => minimumChileInput(3, serverNowMs()), []);
 
   useEffect(() => {
@@ -47,6 +53,23 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       endsAt: auction.endsAt ? toChileInputValue(auction.endsAt) : "",
     });
   }, [auction]);
+
+  const pickImage = (event) => {
+    const file = event.target.files?.[0] ?? null;
+    setError("");
+    if (!file) {
+      setImageFile(null);
+      setImagePreview(null);
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setError("La imagen no puede superar los 3 MB.");
+      event.target.value = "";
+      return;
+    }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
 
   const update = (event) => {
     const { name, value } = event.target;
@@ -82,6 +105,7 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       commune: form.commune.trim(),
       delivery: form.delivery.trim(),
       endsAt,
+      imageFile,
     }).catch((submitError) => setError(describeApiError(submitError)));
   };
 
@@ -98,7 +122,7 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       <div className="field field--wide">
         <label htmlFor="description">Descripción</label>
         <textarea id="description" name="description" rows="6" maxLength="3000" value={form.description} onChange={update} required placeholder="Describe el producto, sus detalles y cualquier defecto relevante." />
-        <small>{form.description.length}/3000 caracteres. No se admiten fotos en esta versión.</small>
+        <small>{form.description.length}/3000 caracteres.</small>
       </div>
 
       <div className="field">
@@ -142,6 +166,15 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
         <label htmlFor="delivery">Coordinación de entrega</label>
         <input id="delivery" name="delivery" maxLength="160" value={form.delivery} onChange={update} required placeholder="Ej: Retiro a coordinar en Providencia" />
         <small>La entrega se coordina directamente entre vendedor y comprador.</small>
+      </div>
+
+      <div className="field field--wide">
+        <label htmlFor="image">Fotografía del producto <span className="field__optional">(opcional)</span></label>
+        <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={pickImage} />
+        <small>JPG, PNG o WebP, hasta 3 MB. Si no subes ninguna, la publicación se muestra sin foto.</small>
+        {(imagePreview || auction?.imageUrl) && (
+          <img className="image-preview" src={imagePreview || auction.imageUrl} alt="Vista previa del producto" />
+        )}
       </div>
 
       <div className="field field--wide">

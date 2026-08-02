@@ -7,7 +7,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
 import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
-import { formatChileDate, formatChileDateLong, formatMoney, numberFromInput } from "../utils/format";
+import { formatChileDate, formatChileDateLong, formatMoney, holdForBid, minimumIncrement, minimumNextBid, numberFromInput } from "../utils/format";
 
 export function AuctionPage() {
   const { id } = useParams();
@@ -87,6 +87,12 @@ export function AuctionPage() {
         <nav className="breadcrumbs" aria-label="Migas de pan">
           <Link to="/">Subastas</Link><span>/</span><span>{auction.category}</span><span>/</span><span>#{auction.id}</span>
         </nav>
+
+        {auction.imageUrl && (
+          <div className="auction-detail__media">
+            <img src={auction.imageUrl} alt={auction.title} />
+          </div>
+        )}
 
         <div className="auction-detail__heading">
           <div>
@@ -170,7 +176,7 @@ export function AuctionPage() {
                   <span>$</span>
                   <input id="bidAmount" inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} />
                 </div>
-                <small>Sin incremento mínimo. Debe superar {formatMoney(auction.currentPrice)}.</small>
+                <small>Mínimo {formatMoney(minimumNextBid(auction.currentPrice, auction.bidCount > 0))} (incremento de {formatMoney(minimumIncrement(auction.currentPrice))}). Se congela una garantía de {formatMoney(holdForBid(minimumNextBid(auction.currentPrice, auction.bidCount > 0)))}.</small>
                 <button className="button button--red button--large button--full" type="submit" disabled={submitting}>
                   {submitting && <Spinner small />} Confirmar puja
                 </button>
@@ -199,7 +205,7 @@ export function AuctionPage() {
 
             <div className="bid-panel__rule">
               <span aria-hidden="true">!</span>
-              <p><strong>Pujar es comprometerse.</strong> Si te corresponde el turno y rechazas, pierdes el 10% de tu oferta congelada.</p>
+              <p><strong>Pujar es comprometerse.</strong> Al pujar se congela una garantía del 10% de tu oferta. Si te corresponde el turno y aceptas, pagas el 90% restante; si rechazas o dejas vencer la hora, pierdes esa garantía.</p>
             </div>
           </aside>
         </div>

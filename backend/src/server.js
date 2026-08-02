@@ -2,6 +2,7 @@ import { app } from './app.js';
 import { config } from './config.js';
 import { pool } from './db/pool.js';
 import { synchronizeDueAuctions } from './services/auction-sync.js';
+import { ensureUploadDirectory } from './lib/images.js';
 
 const server = app.listen(config.port, () => {
   console.log(`RematoOnline API listening on port ${config.port}`);
@@ -28,6 +29,11 @@ async function runScheduledSync() {
     syncing = false;
   }
 }
+
+// The uploads volume may be empty on a fresh deployment.
+await ensureUploadDirectory().catch((error) =>
+  console.error('[uploads] could not create the upload directory', error?.message ?? error),
+);
 
 const syncTimer = setInterval(runScheduledSync, SYNC_INTERVAL_MS);
 syncTimer.unref?.();
