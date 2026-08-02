@@ -5,6 +5,8 @@ import { withTransaction } from '../db/transaction.js';
 import { MAX_MONEY } from '../domain/money.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { conflict } from '../lib/api-error.js';
+import { config } from '../config.js';
+import { flowEnabled } from '../lib/flow.js';
 import { serializeLedgerEntry, serializeWallet } from '../lib/serializers.js';
 import { moneySchema, validate } from '../lib/validation.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -32,6 +34,23 @@ router.get(
 router.post(
   '/deposit',
   asyncHandler(async (request, response) => {
+    // Abono autodeclarado: cualquiera podía darse saldo infinito, lo que vaciaba de
+    // sentido la garantía que respalda cada puja. Con una pasarela configurada este
+    // camino se cierra y el dinero sólo entra por POST /api/payments/flow/deposit,
+    // acreditado cuando la pasarela confirma. Se conserva únicamente fuera de
+    // producción y sin pasarela, para poder desarrollar sin cobrar tarjetas.
+    if (flowEnabled()) {
+      throw conflict(
+        'DEPOSIT_REQUIRES_GATEWAY',
+        'Los abonos se realizan con tarjeta a través de Flow.',
+      );
+    }
+    if (config.isProduction) {
+      throw conflict(
+        'DEPOSIT_DISABLED',
+        'No hay una pasarela de pagos configurada, por lo que no es posible abonar saldo.',
+      );
+    }
     const { amount } = validate(amountSchema, request.body);
     const wallet = await withTransaction(async (client) => {
       const locked = await client.query(

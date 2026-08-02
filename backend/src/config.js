@@ -111,6 +111,13 @@ export const config = Object.freeze({
   smtpUrl: process.env.SMTP_URL?.trim() || null,
   mailFrom: process.env.MAIL_FROM?.trim() || 'RematoOnline <no-reply@rematoonline.cl>',
   appUrl: process.env.APP_URL?.trim() || 'http://localhost:4173',
+  // Pasarela de pagos. Sin claves configuradas, el abono con tarjeta queda deshabilitado
+  // y se conserva el abono simulado sólo fuera de producción.
+  flow: Object.freeze({
+    apiKey: process.env.FLOW_API_KEY?.trim() || null,
+    secretKey: process.env.FLOW_SECRET_KEY?.trim() || null,
+    baseUrl: (process.env.FLOW_BASE_URL?.trim() || 'https://sandbox.flow.cl/api').replace(/\/$/, ''),
+  }),
   // Trust the reverse proxy in front of us (nginx, and the Tailscale Funnel beyond it).
   // Configurable because getting this wrong silently breaks per-IP rate limiting: too
   // low and every request shares one bucket, too high and clients can spoof their IP.

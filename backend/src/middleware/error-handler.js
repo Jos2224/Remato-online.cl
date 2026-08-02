@@ -43,6 +43,27 @@ export function errorHandler(error, _request, response, _next) {
     });
   }
 
+  // Un fallo de la pasarela no es un error de programación: decirle "error interno" a
+  // quien intenta pagar oculta la causa y hace imposible diagnosticarlo. El detalle
+  // técnico va al registro; a la persona se le dice que el pago no pudo iniciarse.
+  if (error?.name === 'FlowError') {
+    console.error('[flow]', error.status, error.code, error.message, error.body ?? '');
+    return response.status(502).json({
+      error: {
+        code: 'PAYMENT_GATEWAY_ERROR',
+        message: 'No pudimos iniciar el pago con la pasarela. Intenta nuevamente en unos minutos.',
+        details: { providerCode: error.code ?? null },
+      },
+    });
+  }
+
+  // Un tiempo de espera agotado hacia la pasarela tampoco es un 500 nuestro.
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    return response.status(504).json({
+      error: { code: 'GATEWAY_TIMEOUT', message: 'La pasarela de pagos no respondió a tiempo.' },
+    });
+  }
+
   console.error(error);
   return response.status(500).json({
     error: {

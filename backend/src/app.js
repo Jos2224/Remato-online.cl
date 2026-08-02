@@ -11,6 +11,7 @@ import auctionRoutes from './routes/auctions.js';
 import matchRoutes from './routes/matches.js';
 import healthRoutes from './routes/health.js';
 import legalRoutes from './routes/legal.js';
+import paymentRoutes from './routes/payments.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
 
 export const app = express();
@@ -102,6 +103,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/auctions', auctionRoutes);
 app.use('/api/matches', matchRoutes);
+app.use('/api/payments', paymentRoutes);
 app.use('/api/legal', legalRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/health', healthRoutes);

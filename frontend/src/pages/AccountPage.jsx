@@ -1,6 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { walletApi } from "../api/client";
+import { paymentsApi, walletApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
@@ -33,9 +33,46 @@ export function AccountPage() {
   }, []);
   const { data, loading, error, reload } = usePollingQuery(fetchAccount, { interval: 15_000 });
   const [depositAmount, setDepositAmount] = useState("");
+  // Con pasarela configurada el abono se hace con tarjeta; sin ella queda el abono
+  // simulado de desarrollo.
+  const [gatewayEnabled, setGatewayEnabled] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyAction, setBusyAction] = useState("");
+
+  // Los hooks van antes de cualquier return temprano: React exige el mismo orden de
+  // hooks en cada render.
+  useEffect(() => {
+    let cancelled = false;
+    paymentsApi
+      .mine()
+      .then((result) => !cancelled && setGatewayEnabled(result.enabled))
+      .catch(() => !cancelled && setGatewayEnabled(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Resultado del retorno desde la pasarela. El saldo ya fue (o no) acreditado por la
+  // confirmación servidor a servidor: aquí sólo se informa y se recarga.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("pago");
+    if (!outcome) return;
+    const messages = {
+      exito: "Pago confirmado. Tu saldo ya está acreditado.",
+      pending: "Tu pago está pendiente de confirmación. Se acreditará en cuanto la pasarela lo confirme.",
+      pendiente: "Tu pago está pendiente de confirmación. Se acreditará en cuanto la pasarela lo confirme.",
+      rejected: "El pago fue rechazado. No se descontó nada.",
+      cancelled: "El pago fue cancelado.",
+      amount_mismatch: "El monto informado por la pasarela no coincide con la orden. Contáctanos.",
+    };
+    showToast(messages[outcome] ?? "No pudimos determinar el resultado del pago.");
+    // Se limpia la URL para que recargar no repita el aviso.
+    window.history.replaceState({}, "", window.location.pathname);
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (loading) return <PageLoader label="Abriendo tu cuenta" />;
   if (error && !data) return <div className="container page-space"><ErrorState title="No pudimos cargar tu saldo" error={error} onRetry={reload} /></div>;
@@ -57,8 +94,16 @@ export function AccountPage() {
     }
     setBusyAction(type);
     try {
-      if (type === "deposit") await walletApi.deposit(amount);
-      else await walletApi.withdraw(amount);
+      if (type === "deposit") {
+        if (gatewayEnabled) {
+          // Se sale del sitio hacia la pasarela. Al volver, el saldo ya estará
+          // acreditado por la confirmación servidor a servidor.
+          const started = await paymentsApi.startDeposit(amount);
+          window.location.assign(started.redirectUrl);
+          return;
+        }
+        await walletApi.deposit(amount);
+      } else await walletApi.withdraw(amount);
       setDepositAmount("");
       setWithdrawAmount("");
       await reload();
@@ -112,7 +157,7 @@ export function AccountPage() {
             <div className="money-action__form">
               <div className="money-input"><span>$</span><input aria-label="Monto a incrementar" inputMode="numeric" value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} placeholder="100000" /></div>
               <button className="button button--dark" type="button" disabled={Boolean(busyAction)} onClick={() => moveMoney("deposit")}>
-                {busyAction === "deposit" && <Spinner small />} Agregar
+                {busyAction === "deposit" && <Spinner small />} {gatewayEnabled ? "Pagar con tarjeta" : "Agregar"}
               </button>
             </div>
           </article>

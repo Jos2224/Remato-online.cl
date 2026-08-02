@@ -365,6 +365,18 @@ export const matchesApi = {
   },
 };
 
+export const paymentsApi = {
+  // Inicia el abono y devuelve la URL de la pasarela. El saldo NO sube aquí: sube
+  // cuando la pasarela confirma servidor a servidor.
+  async startDeposit(amount) {
+    return unwrap(await request("/payments/flow/deposit", { method: "POST", body: { amount } }));
+  },
+  async mine() {
+    const payload = unwrap(await request("/payments/mine"));
+    return { payments: payload?.payments ?? [], enabled: Boolean(payload?.enabled) };
+  },
+};
+
 export const legalApi = {
   async list() {
     const payload = unwrap(await request("/legal", { token: null }), ["documents"]);
