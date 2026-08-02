@@ -19,6 +19,11 @@ const CATEGORIES = [
 
 const CONDITIONS = ["Nuevo", "Como nuevo", "Usado", "Para reparar"];
 
+const SHIPPING = [
+  { value: "PICKUP", label: "Retiro en persona" },
+  { value: "CHILEXPRESS", label: "Envío por Chilexpress" },
+];
+
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGES = 8;
 
@@ -31,6 +36,8 @@ const EMPTY_FORM = {
   commune: "",
   delivery: "",
   endsAt: "",
+  shippingMethod: "PICKUP",
+  shippingCost: "",
 };
 
 export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
@@ -56,6 +63,8 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
       commune: auction.commune || "",
       delivery: auction.delivery || "",
       endsAt: auction.endsAt ? toChileInputValue(auction.endsAt) : "",
+      shippingMethod: auction.shippingMethod || "PICKUP",
+      shippingCost: auction.shippingCost != null ? String(auction.shippingCost) : "",
     });
   }, [auction]);
 
@@ -120,6 +129,10 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
       setError("El precio inicial debe ser mayor a $0.");
       return;
     }
+    if (form.shippingMethod === "CHILEXPRESS" && numberFromInput(form.shippingCost) <= 0) {
+      setError("Indica el costo del despacho por Chilexpress.");
+      return;
+    }
     const minimumClosingTime = serverNowMs() + 3 * 60_000;
     if (!endsAt || new Date(endsAt).getTime() < minimumClosingTime - 5_000) {
       setError("El cierre debe quedar al menos 3 minutos por delante de la hora actual de Chile.");
@@ -135,6 +148,9 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
       commune: form.commune.trim(),
       delivery: form.delivery.trim(),
       endsAt,
+      shippingMethod: form.shippingMethod,
+      shippingCost:
+        form.shippingMethod === "CHILEXPRESS" ? numberFromInput(form.shippingCost) : null,
       imageFiles,
       ...(editing ? {} : { acceptedDocuments }),
     }).catch((submitError) => setError(describeApiError(submitError)));
@@ -192,6 +208,27 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
         <label htmlFor="commune">Comuna</label>
         <input id="commune" name="commune" value={form.commune} onChange={update} required placeholder="Ej: Providencia" />
       </div>
+
+      <div className="field">
+        <label htmlFor="shippingMethod">Cómo se entrega</label>
+        <select id="shippingMethod" name="shippingMethod" value={form.shippingMethod} onChange={update}>
+          {SHIPPING.map((option) => (
+            <option value={option.value} key={option.value}>{option.label}</option>
+          ))}
+        </select>
+        <small>El sello que ve quien compra depende de esto, así que debe reflejar lo que harás de verdad.</small>
+      </div>
+
+      {form.shippingMethod === "CHILEXPRESS" && (
+        <div className="field">
+          <label htmlFor="shippingCost">Costo del despacho</label>
+          <div className="money-input">
+            <span>$</span>
+            <input id="shippingCost" name="shippingCost" inputMode="numeric" value={form.shippingCost} onChange={update} placeholder="4990" />
+          </div>
+          <small>{formatMoney(numberFromInput(form.shippingCost))} · lo paga quien compra, aparte del precio.</small>
+        </div>
+      )}
 
       <div className="field field--wide">
         <label htmlFor="delivery">Coordinación de entrega</label>

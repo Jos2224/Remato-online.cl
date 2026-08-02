@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { paymentsApi, walletApi } from "../api/client";
+import { FlowBadge } from "../components/TrustBadges";
 import { useAuth } from "../auth/AuthContext";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
@@ -156,6 +157,7 @@ export function AccountPage() {
             <p>En este MVP declaras el monto. El movimiento queda registrado en backend.</p>
             <div className="money-action__form">
               <div className="money-input"><span>$</span><input aria-label="Monto a incrementar" inputMode="numeric" value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} placeholder="100000" /></div>
+              {gatewayEnabled && <FlowBadge compact />}
               <button className="button button--dark" type="button" disabled={Boolean(busyAction)} onClick={() => moveMoney("deposit")}>
                 {busyAction === "deposit" && <Spinner small />} {gatewayEnabled ? "Pagar con tarjeta" : "Agregar"}
               </button>

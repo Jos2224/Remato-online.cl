@@ -2500,3 +2500,38 @@ tbody tr:last-child td {
 }
 
 .legal-history span { color: var(--ink-soft); font-size: 0.78rem; }
+
+/* Sellos de confianza */
+.trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--white);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.trust-badge strong { color: var(--ink); font-weight: 800; }
+.trust-badge__mark { display: inline-flex; flex: 0 0 auto; }
+.trust-badge--compact { padding: 4px 9px; font-size: 0.72rem; }
+.trust-badge--flow { border-color: color-mix(in srgb, var(--green) 35%, var(--line)); }
+.trust-badge--flow .trust-badge__mark { color: var(--green); }
+.trust-badge--shipping { border-color: color-mix(in srgb, var(--amber) 35%, var(--line)); }
+.trust-badge--shipping .trust-badge__mark { color: var(--amber); }
+
+.trust-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.auction-card__shipping { margin-top: 4px; }
+
+.footer__trust { display: flex; align-items: center; }

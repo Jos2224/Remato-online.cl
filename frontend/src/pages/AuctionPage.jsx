@@ -6,6 +6,7 @@ import { Countdown } from "../components/Countdown";
 import { StatusBadge } from "../components/StatusBadge";
 import { AuctionGallery } from "../components/AuctionGallery";
 import { LegalConsent } from "../components/LegalConsent";
+import { FlowBadge, ShippingBadge } from "../components/TrustBadges";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
 import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
@@ -169,6 +170,12 @@ export function AuctionPage() {
               <span>{isActive ? "Puja actual" : "Precio final"}</span>
               <strong>{formatMoney(auction.currentPrice)}</strong>
               <small>{auction.bidCount} {auction.bidCount === 1 ? "oferta" : "ofertas"}</small>
+            </div>
+
+            {/* Informativo: se muestra siempre, no sólo a quien puede pujar. */}
+            <div className="trust-row">
+              <ShippingBadge auction={auction} />
+              <FlowBadge />
             </div>
 
             {actionError && <InlineNotice type="error">{actionError}</InlineNotice>}

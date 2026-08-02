@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { FlowBadge } from "./TrustBadges";
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { systemApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -74,6 +75,9 @@ function Footer() {
           <p><strong>Hora oficial:</strong> America/Santiago</p>
           <p><strong>Match:</strong> 5% de comisión</p>
           <p><strong>Rechazo:</strong> pierdes la garantía del 10%</p>
+        </div>
+        <div className="footer__trust">
+          <FlowBadge compact />
         </div>
         <nav className="footer__legal" aria-label="Documentos legales">
           <Link to="/legal">Legal</Link>

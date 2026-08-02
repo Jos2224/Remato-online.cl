@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Countdown } from "./Countdown";
 import { StatusBadge } from "./StatusBadge";
+import { ShippingBadge } from "./TrustBadges";
 import { formatChileDate, formatMoney } from "../utils/format";
 
 export function AuctionCard({ auction, muted = false }) {
@@ -45,6 +46,9 @@ export function AuctionCard({ auction, muted = false }) {
           <div>
             <span>{isActive ? "Cierra" : "Cerró"}</span>
             <strong>{formatChileDate(auction.endsAt)}</strong>
+          </div>
+          <div className="auction-card__shipping">
+            <ShippingBadge auction={auction} compact />
           </div>
           <div className="auction-card__timer">
             {isActive ? <Countdown until={auction.endsAt} compact /> : <span className="link-arrow">Ver resultado →</span>}

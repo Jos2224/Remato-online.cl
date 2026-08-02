@@ -19,3 +19,12 @@ export const CONDITIONS = Object.freeze([
   'Usado',
   'Para reparar',
 ]);
+
+// Métodos de envío. Cerrado igual que las categorías: el sello que ve quien compra
+// depende de este valor, así que no puede ser texto libre.
+export const SHIPPING_METHODS = Object.freeze(['PICKUP', 'CHILEXPRESS']);
+
+export const SHIPPING_LABELS = Object.freeze({
+  PICKUP: 'Retiro en persona',
+  CHILEXPRESS: 'Envío por Chilexpress',
+});

@@ -110,6 +110,11 @@ export function serializeAuction(row, viewer) {
     currentPrice: Number(row.current_price),
     commune: row.commune,
     delivery: row.delivery_method,
+    // Método declarado por quien vende. De esto depende el sello que ve quien compra,
+    // por eso es un valor cerrado y no el texto libre de `delivery`.
+    shippingMethod: row.shipping_method ?? 'PICKUP',
+    shippingCost: row.shipping_cost == null ? null : Number(row.shipping_cost),
+    shippingTrackingCode: row.shipping_tracking_code ?? null,
     // Optional gallery: an empty array when the seller published without photos.
     images: (row.images ?? []).map((image) => ({
       id: image.id,

@@ -171,6 +171,9 @@ export function normalizeAuction(raw = {}) {
     currentPrice: asNumber(raw.currentPrice, raw.highestBid, raw.precioActual, raw.startingPrice, raw.initialPrice),
     commune: raw.commune ?? raw.comuna ?? raw.location ?? "No informada",
     imageUrl: raw.imageUrl ?? null,
+    shippingMethod: raw.shippingMethod === "CHILEXPRESS" ? "CHILEXPRESS" : "PICKUP",
+    shippingCost: raw.shippingCost == null ? null : asNumber(raw.shippingCost),
+    shippingTrackingCode: raw.shippingTrackingCode ?? null,
     images: Array.isArray(raw.images)
       ? raw.images.filter((image) => image?.url).map((image) => ({ id: String(image.id ?? image.url), url: image.url }))
       : [],
@@ -246,6 +249,8 @@ function auctionPayload(data) {
     commune: data.commune,
     delivery: data.delivery,
     endsAt: data.endsAt,
+    ...(data.shippingMethod ? { shippingMethod: data.shippingMethod } : {}),
+    ...(data.shippingMethod === "CHILEXPRESS" ? { shippingCost: data.shippingCost } : {}),
     ...(data.acceptedDocuments ? { acceptedDocuments: data.acceptedDocuments } : {}),
   };
 }

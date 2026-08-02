@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
 import { ANTI_SNIPE_WINDOW_MS, minimumIncrement, minimumNextBid } from '../domain/auction.js';
-import { holdForBid } from '../domain/money.js';
-import { CATEGORIES, CONDITIONS } from '../domain/taxonomy.js';
+import { MAX_MONEY, holdForBid } from '../domain/money.js';
+import { CATEGORIES, CONDITIONS, SHIPPING_METHODS } from '../domain/taxonomy.js';
 import { stripMarkup, stripMarkupMultiline } from '../lib/sanitize.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
@@ -61,7 +61,30 @@ const auctionFields = {
     .string({ required_error: 'Debes indicar la fecha de cierre.' })
     .trim()
     .min(1, 'Debes indicar la fecha de cierre.'),
+  shippingMethod: z
+    .enum(SHIPPING_METHODS, {
+      errorMap: () => ({ message: 'El método de envío debe ser retiro en persona o Chilexpress.' }),
+    })
+    .default('PICKUP'),
+  // Entero en pesos. Sólo tiene sentido con despacho; se valida más abajo.
+  shippingCost: z
+    .number({ invalid_type_error: 'El costo de envío debe ser un número.' })
+    .int('El costo de envío debe ser un monto entero en pesos, sin decimales.')
+    .min(0, 'El costo de envío no puede ser negativo.')
+    .max(MAX_MONEY, 'El costo de envío supera el máximo permitido.')
+    .nullish(),
 };
+
+// Un costo de despacho en una publicación de sólo retiro es incoherente, y prometer
+// Chilexpress sin decir cuánto cuesta deja a quien compra sin saber el total.
+const shippingIsCoherent = (value) => {
+  if (value.shippingMethod === 'CHILEXPRESS') {
+    return value.shippingCost != null;
+  }
+  return value.shippingCost == null || value.shippingCost === 0;
+};
+const SHIPPING_MESSAGE =
+  'Si despachas por Chilexpress debes indicar el costo; si es retiro en persona, no lleva costo de envío.';
 
 const createSchema = z
   .object({
@@ -70,13 +93,18 @@ const createSchema = z
     // Casillas marcadas al publicar. Se validan contra los documentos realmente exigidos.
     acceptedDocuments: z.array(z.string().trim().min(1)).default([]),
   })
-  .strict();
+  .strict()
+  .refine(shippingIsCoherent, { message: SHIPPING_MESSAGE, path: ['shippingCost'] });
 
 const updateSchema = z
   .object(auctionFields)
   .partial()
   .strict()
-  .refine((value) => Object.keys(value).length > 0, 'Debes enviar al menos un cambio.');
+  .refine((value) => Object.keys(value).length > 0, 'Debes enviar al menos un cambio.')
+  .refine(
+    (value) => value.shippingMethod === undefined || shippingIsCoherent(value),
+    { message: SHIPPING_MESSAGE, path: ['shippingCost'] },
+  );
 
 const bidSchema = z
   .object({
@@ -144,8 +172,9 @@ router.post(
       const inserted = await client.query(
         `INSERT INTO auctions
           (seller_id, title, description, category, product_condition,
-           starting_price, commune, delivery_method, closes_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           starting_price, commune, delivery_method, closes_at,
+           shipping_method, shipping_cost)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           request.user.id,
@@ -157,6 +186,8 @@ router.post(
           input.commune,
           input.delivery,
           closesAt.toJSDate(),
+          input.shippingMethod,
+          input.shippingMethod === 'CHILEXPRESS' ? input.shippingCost : null,
         ],
       );
       await requireAcceptance(
@@ -302,6 +333,9 @@ router.patch(
       const closesAt = input.endsAt
         ? requireAtLeastThreeMinutesAhead(input.endsAt, DateTime.fromJSDate(now))
         : DateTime.fromJSDate(new Date(auction.closes_at));
+      const nextShippingMethod = input.shippingMethod ?? auction.shipping_method;
+      const nextShippingCost =
+        input.shippingCost !== undefined ? input.shippingCost : auction.shipping_cost;
 
       await client.query(
         `UPDATE auctions SET
@@ -312,7 +346,9 @@ router.patch(
            commune = $6,
            delivery_method = $7,
            closes_at = $8,
-           updated_at = $9
+           updated_at = $9,
+           shipping_method = $10,
+           shipping_cost = $11
          WHERE id = $1`,
         [
           auction.id,
@@ -324,6 +360,8 @@ router.patch(
           input.delivery ?? auction.delivery_method,
           closesAt.toJSDate(),
           now,
+          nextShippingMethod,
+          nextShippingMethod === 'CHILEXPRESS' ? nextShippingCost : null,
         ],
       );
       return { closed: false };
