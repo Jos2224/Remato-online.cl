@@ -9,6 +9,9 @@ export const UPLOAD_DIRECTORY = process.env.UPLOAD_DIR ?? '/app/uploads';
 
 export const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
+// Enough angles for a used product without turning a listing into an album.
+export const MAX_IMAGES_PER_AUCTION = 8;
+
 // The declared Content-Type is attacker-controlled, so the format is decided by the
 // file's own magic bytes and only then mapped to an extension.
 const SIGNATURES = [

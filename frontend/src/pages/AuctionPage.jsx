@@ -4,6 +4,7 @@ import { auctionsApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Countdown } from "../components/Countdown";
 import { StatusBadge } from "../components/StatusBadge";
+import { AuctionGallery } from "../components/AuctionGallery";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
 import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
@@ -88,9 +89,9 @@ export function AuctionPage() {
           <Link to="/">Subastas</Link><span>/</span><span>{auction.category}</span><span>/</span><span>#{auction.id}</span>
         </nav>
 
-        {auction.imageUrl && (
+        {auction.images.length > 0 && (
           <div className="auction-detail__media">
-            <img src={auction.imageUrl} alt={auction.title} />
+            <AuctionGallery images={auction.images} title={auction.title} />
           </div>
         )}
 

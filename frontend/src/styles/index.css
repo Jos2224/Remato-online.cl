@@ -506,10 +506,14 @@ textarea:focus-visible {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
 }
 
+/* `contain`, not `cover`: the whole product has to be visible. `cover` filled the frame
+   by cropping the edges off, which hid exactly what the buyer needs to see. The image is
+   scaled down to fit and centred; the neutral backdrop absorbs any leftover space. */
 .auction-card__media img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center;
   display: block;
   transition: transform 220ms ease;
 }
@@ -520,23 +524,201 @@ textarea:focus-visible {
 
 .auction-detail__media {
   margin-block: 20px;
-  border: 1px solid var(--line);
-  max-height: 460px;
-  overflow: hidden;
 }
 
-.auction-detail__media img {
+/* Gallery
+   Every image rule below uses `contain`: the whole product is always visible and the
+   backdrop absorbs the leftover space. Cropping would hide exactly what a buyer of a
+   used item needs to inspect. */
+.gallery__stage {
+  position: relative;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.gallery__main {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  padding: 0;
+  border: 0;
+  display: block;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.gallery__main img {
   width: 100%;
   height: 100%;
   object-fit: contain;
   display: block;
 }
 
-.image-preview {
-  margin-top: 12px;
-  max-width: 260px;
+.gallery__hint,
+.gallery__counter {
+  position: absolute;
+  bottom: 10px;
+  padding: 4px 10px;
+  color: var(--white);
+  background: rgba(23, 23, 22, 0.72);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.gallery__hint { right: 10px; opacity: 0; transition: opacity 160ms ease; }
+.gallery__counter { left: 10px; }
+.gallery__stage:hover .gallery__hint { opacity: 1; }
+
+.gallery__arrow {
+  position: absolute;
+  top: 50%;
+  width: 42px;
+  height: 42px;
   border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gallery__arrow:hover { background: var(--white); }
+.gallery__arrow--prev { left: 10px; }
+.gallery__arrow--next { right: 10px; }
+
+.gallery__thumbs {
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+.gallery__thumb {
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  cursor: pointer;
+}
+
+.gallery__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
+}
+
+.gallery__thumb--active { border-color: var(--ink); border-width: 2px; }
+
+/* Lightbox */
+.lightbox {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(16, 16, 15, 0.94);
+}
+
+.lightbox__stage {
+  position: relative;
+  max-width: min(1200px, 100%);
+  max-height: 82vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.lightbox__image {
+  max-width: 100%;
+  max-height: 82vh;
+  object-fit: contain;
+  display: block;
+  cursor: zoom-in;
+  transition: transform 200ms ease;
+}
+
+/* Zoom magnifies about the point that was clicked, so the detail under the pointer is
+   what fills the view. */
+.lightbox__image--zoomed {
+  transform: scale(2.5);
+  cursor: zoom-out;
+}
+
+.lightbox__close {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  color: var(--white);
+  background: transparent;
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox__caption {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+}
+
+/* Form previews */
+.image-previews {
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  list-style: none;
+}
+
+.image-previews li {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.image-previews img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.image-previews button {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--white);
+  background: var(--ink);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (max-width: 720px) {
+  .gallery__arrow { width: 36px; height: 36px; }
+  .lightbox { padding: 12px; }
 }
 
 .field__optional {

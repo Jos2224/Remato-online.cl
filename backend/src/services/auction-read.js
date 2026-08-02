@@ -29,7 +29,8 @@ const auctionSelect = `
     current_match.position AS current_match_position,
     current_match.offered_amount AS current_match_amount,
     current_match.started_at AS current_match_started_at,
-    current_match.expires_at AS current_match_expires_at
+    current_match.expires_at AS current_match_expires_at,
+    COALESCE(gallery.images, '[]'::json) AS images
   FROM auctions a
   JOIN users seller ON seller.id = a.seller_id
   LEFT JOIN LATERAL (
@@ -49,6 +50,14 @@ const auctionSelect = `
   LEFT JOIN users candidate ON candidate.id = current_match.candidate_id
   LEFT JOIN sales sale ON sale.auction_id = a.id
   LEFT JOIN users buyer ON buyer.id = sale.buyer_id
+  LEFT JOIN LATERAL (
+    SELECT json_agg(
+             json_build_object('id', image.id, 'filename', image.filename)
+             ORDER BY image.position, image.created_at
+           ) AS images
+    FROM auction_images image
+    WHERE image.auction_id = a.id
+  ) gallery ON true
   LEFT JOIN LATERAL (
     SELECT id, amount, status, created_at
     FROM bids
@@ -101,8 +110,13 @@ export function serializeAuction(row, viewer) {
     currentPrice: Number(row.current_price),
     commune: row.commune,
     delivery: row.delivery_method,
-    // Optional: null when the seller published without a photo.
-    imageUrl: imageUrlFor(row.image_filename),
+    // Optional gallery: an empty array when the seller published without photos.
+    images: (row.images ?? []).map((image) => ({
+      id: image.id,
+      url: imageUrlFor(image.filename),
+    })),
+    // The lead photo, kept as a convenience for cards and previews.
+    imageUrl: row.images?.[0] ? imageUrlFor(row.images[0].filename) : null,
     endsAt: iso(row.closes_at),
     status: row.status,
     bidCount: Number(row.bid_count),

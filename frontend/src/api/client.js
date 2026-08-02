@@ -171,6 +171,9 @@ export function normalizeAuction(raw = {}) {
     currentPrice: asNumber(raw.currentPrice, raw.highestBid, raw.precioActual, raw.startingPrice, raw.initialPrice),
     commune: raw.commune ?? raw.comuna ?? raw.location ?? "No informada",
     imageUrl: raw.imageUrl ?? null,
+    images: Array.isArray(raw.images)
+      ? raw.images.filter((image) => image?.url).map((image) => ({ id: String(image.id ?? image.url), url: image.url }))
+      : [],
     delivery: raw.delivery ?? raw.entrega ?? raw.deliveryMethod ?? "A coordinar con el vendedor",
     endsAt,
     createdAt: raw.createdAt ?? null,
@@ -307,18 +310,27 @@ export const auctionsApi = {
   async withdrawBid(id) {
     return request(`/auctions/${encodeURIComponent(id)}/bids/mine`, { method: "DELETE" });
   },
-  // The image is sent as raw binary; the server decides the format from the file's own
+  // Photos are sent as raw binary; the server decides the format from the file's own
   // magic bytes, so the browser-declared type is only a routing hint.
-  async uploadImage(id, file) {
-    const payload = await request(`/auctions/${encodeURIComponent(id)}/image`, {
-      method: "PUT",
+  async addImage(id, file) {
+    const payload = await request(`/auctions/${encodeURIComponent(id)}/images`, {
+      method: "POST",
       headers: { "Content-Type": file.type },
       rawBody: file,
     });
     return normalizeAuction(unwrap(payload, ["auction"]));
   },
-  async removeImage(id) {
-    return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}/image`, { method: "DELETE" }), ["auction"]));
+  // Sequential on purpose: the server assigns each photo the next position, so parallel
+  // uploads would race for the same slot and scramble the order the seller chose.
+  async addImages(id, files) {
+    let auction = null;
+    for (const file of files) auction = await auctionsApi.addImage(id, file);
+    return auction;
+  },
+  async removeImage(id, imageId) {
+    return normalizeAuction(
+      unwrap(await request(`/auctions/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, { method: "DELETE" }), ["auction"]),
+    );
   },
 };
 

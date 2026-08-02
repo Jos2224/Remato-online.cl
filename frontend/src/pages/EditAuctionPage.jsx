@@ -24,11 +24,21 @@ export function EditAuctionPage() {
     return <div className="container page-space"><ErrorState title="Esta publicación no es tuya" error={{ message: "Solo la cuenta vendedora puede editarla." }} /></div>;
   }
 
-  const update = async ({ imageFile, ...payload }) => {
+  const removeImage = async (imageId) => {
+    try {
+      await auctionsApi.removeImage(auction.id, imageId);
+      await reload();
+      showToast("Foto eliminada.");
+    } catch (removeError) {
+      showToast(removeError.message);
+    }
+  };
+
+  const update = async ({ imageFiles = [], ...payload }) => {
     setSubmitting(true);
     try {
       await auctionsApi.update(auction.id, payload);
-      if (imageFile) await auctionsApi.uploadImage(auction.id, imageFile);
+      if (imageFiles.length > 0) await auctionsApi.addImages(auction.id, imageFiles);
       showToast("Cambios guardados. La nueva fecha ya es visible para los postores.");
       navigate(`/subastas/${auction.id}`);
     } finally {
@@ -48,7 +58,7 @@ export function EditAuctionPage() {
             <p>La nueva fecha debe quedar al menos 3 minutos por delante de la hora actual de Chile.</p>
           </div>
         </header>
-        <AuctionForm auction={auction} onSubmit={update} submitting={submitting} />
+        <AuctionForm auction={auction} onSubmit={update} submitting={submitting} onRemoveImage={removeImage} />
       </div>
     </div>
   );

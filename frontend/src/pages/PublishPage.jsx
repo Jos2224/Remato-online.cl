@@ -9,17 +9,17 @@ export function PublishPage() {
   const { showToast } = useToast();
   const [submitting, setSubmitting] = useState(false);
 
-  const create = async ({ imageFile, ...payload }) => {
+  const create = async ({ imageFiles = [], ...payload }) => {
     setSubmitting(true);
     try {
       const auction = await auctionsApi.create(payload);
-      // The image needs the auction id, so it goes up right after creation. A failed
-      // upload must not lose the publication itself.
-      if (imageFile) {
+      // Photos need the auction id, so they go up right after creation. A failed upload
+      // must not lose the publication itself.
+      if (imageFiles.length > 0) {
         try {
-          await auctionsApi.uploadImage(auction.id, imageFile);
+          await auctionsApi.addImages(auction.id, imageFiles);
         } catch {
-          showToast("Publicamos la subasta, pero no pudimos subir la foto. Puedes agregarla editándola.");
+          showToast("Publicamos la subasta, pero no pudimos subir todas las fotos. Puedes agregarlas editándola.");
           navigate(`/subastas/${auction.id}`);
           return;
         }

@@ -9,7 +9,7 @@ import { CATEGORIES, CONDITIONS } from '../domain/taxonomy.js';
 import { stripMarkup, stripMarkupMultiline } from '../lib/sanitize.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
-import { MAX_IMAGE_BYTES, deleteImage, storeImage } from '../lib/images.js';
+import { MAX_IMAGES_PER_AUCTION, MAX_IMAGE_BYTES, deleteImage, storeImage } from '../lib/images.js';
 import { mailEnabled } from '../lib/mailer.js';
 import { requireAtLeastThreeMinutesAhead } from '../lib/time.js';
 import { moneySchema, validate } from '../lib/validation.js';
@@ -155,8 +155,18 @@ router.post(
 // Optional product image, one per auction. Raw binary rather than multipart: it needs no
 // extra dependency and the format is decided by the file's magic bytes, not by the
 // client-declared content type.
-router.put(
-  '/:id/image',
+async function requireOwnedAuction(request) {
+  const owned = await pool.query('SELECT seller_id FROM auctions WHERE id = $1', [
+    request.params.id,
+  ]);
+  if (owned.rowCount === 0) throw notFound('Subasta no encontrada.');
+  if (owned.rows[0].seller_id !== request.user.id) throw forbidden();
+}
+
+// Append one photo. Each call adds an image to the end of the gallery rather than
+// replacing it, so the seller builds the set up one shot at a time.
+router.post(
+  '/:id/images',
   requireAuth,
   express.raw({ type: ['image/jpeg', 'image/png', 'image/webp'], limit: MAX_IMAGE_BYTES }),
   asyncHandler(async (request, response) => {
@@ -164,44 +174,52 @@ router.put(
     if (!Buffer.isBuffer(request.body) || request.body.length === 0) {
       throw badRequest('IMAGE_REQUIRED', 'Envía una imagen JPG, PNG o WebP.');
     }
+    await requireOwnedAuction(request);
 
-    const owned = await pool.query('SELECT seller_id, image_filename FROM auctions WHERE id = $1', [
-      request.params.id,
-    ]);
-    if (owned.rowCount === 0) throw notFound('Subasta no encontrada.');
-    if (owned.rows[0].seller_id !== request.user.id) throw forbidden();
+    const count = await pool.query(
+      'SELECT count(*)::int AS total FROM auction_images WHERE auction_id = $1',
+      [request.params.id],
+    );
+    if (count.rows[0].total >= MAX_IMAGES_PER_AUCTION) {
+      throw conflict(
+        'IMAGE_LIMIT_REACHED',
+        `Puedes subir hasta ${MAX_IMAGES_PER_AUCTION} fotos por subasta.`,
+      );
+    }
 
     const stored = await storeImage(request.body);
     if (!stored) {
       throw badRequest('IMAGE_INVALID', 'El archivo no es una imagen JPG, PNG o WebP válida.');
     }
 
-    await pool.query('UPDATE auctions SET image_filename = $2, updated_at = now() WHERE id = $1', [
-      request.params.id,
-      stored.filename,
-    ]);
-    // Replacing an image removes the old file so uploads cannot accumulate forever.
-    await deleteImage(owned.rows[0].image_filename);
+    await pool.query(
+      `INSERT INTO auction_images (auction_id, filename, position)
+       VALUES ($1, $2, COALESCE((SELECT max(position) + 1 FROM auction_images WHERE auction_id = $1), 0))`,
+      [request.params.id, stored.filename],
+    );
+    await pool.query('UPDATE auctions SET updated_at = now() WHERE id = $1', [request.params.id]);
 
     const auction = await getAuctionById(request.params.id, request.user);
-    response.json({ data: { auction } });
+    response.status(201).json({ data: { auction } });
   }),
 );
 
 router.delete(
-  '/:id/image',
+  '/:id/images/:imageId',
   requireAuth,
   asyncHandler(async (request, response) => {
-    const owned = await pool.query('SELECT seller_id, image_filename FROM auctions WHERE id = $1', [
-      request.params.id,
-    ]);
-    if (owned.rowCount === 0) throw notFound('Subasta no encontrada.');
-    if (owned.rows[0].seller_id !== request.user.id) throw forbidden();
+    await requireOwnedAuction(request);
 
-    await pool.query('UPDATE auctions SET image_filename = NULL, updated_at = now() WHERE id = $1', [
-      request.params.id,
-    ]);
-    await deleteImage(owned.rows[0].image_filename);
+    const removed = await pool.query(
+      'DELETE FROM auction_images WHERE id = $1 AND auction_id = $2 RETURNING filename',
+      [request.params.imageId, request.params.id],
+    );
+    if (removed.rowCount === 0) throw notFound('Foto no encontrada.');
+
+    await pool.query('UPDATE auctions SET updated_at = now() WHERE id = $1', [request.params.id]);
+    // Remove the file only after the row is gone, so a failure never leaves a listing
+    // pointing at something that no longer exists.
+    await deleteImage(removed.rows[0].filename);
 
     const auction = await getAuctionById(request.params.id, request.user);
     response.json({ data: { auction } });

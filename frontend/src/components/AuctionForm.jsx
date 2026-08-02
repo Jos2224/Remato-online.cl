@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { chileInputToIso, describeApiError, formatMoney, minimumChileInput, numberFromInput, toChileInputValue } from "../utils/format";
 import { serverNowMs } from "../utils/server-clock";
 import { InlineNotice, Spinner } from "./States";
+import { downscaleImage } from "../utils/image";
 
 const CATEGORIES = [
   "Tecnología",
@@ -18,6 +19,7 @@ const CATEGORIES = [
 const CONDITIONS = ["Nuevo", "Como nuevo", "Usado", "Para reparar"];
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const MAX_IMAGES = 8;
 
 const EMPTY_FORM = {
   title: "",
@@ -30,14 +32,14 @@ const EMPTY_FORM = {
   endsAt: "",
 };
 
-export function AuctionForm({ auction, onSubmit, submitting }) {
+export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
   const editing = Boolean(auction);
   const [form, setForm] = useState(EMPTY_FORM);
   const [error, setError] = useState("");
-  // Optional photo. Kept out of `form` because it is a File, not a text field, and it is
-  // uploaded in a second request once the auction has an id.
-  const [imageFile, setImageFile] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  // Optional photos. Kept out of `form` because these are Files, not text fields, and
+  // they are uploaded in follow-up requests once the auction has an id.
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
   const minimum = useMemo(() => minimumChileInput(3, serverNowMs()), []);
 
   useEffect(() => {
@@ -54,21 +56,46 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
     });
   }, [auction]);
 
-  const pickImage = (event) => {
-    const file = event.target.files?.[0] ?? null;
+  const alreadyPublished = auction?.images?.length ?? 0;
+
+  const pickImages = async (event) => {
+    const picked = Array.from(event.target.files ?? []);
+    event.target.value = "";
     setError("");
-    if (!file) {
-      setImageFile(null);
-      setImagePreview(null);
+    if (picked.length === 0) return;
+
+    const room = MAX_IMAGES - alreadyPublished - imageFiles.length;
+    if (room <= 0) {
+      setError(`Ya alcanzaste el máximo de ${MAX_IMAGES} fotos.`);
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
-      setError("La imagen no puede superar los 3 MB.");
-      event.target.value = "";
-      return;
+
+    const accepted = [];
+    for (const original of picked.slice(0, room)) {
+      // Shrink first: a photo straight from a phone is usually far larger than the
+      // limit, and rejecting it outright would be needless when scaling works.
+      const file = await downscaleImage(original);
+      if (file.size > MAX_IMAGE_BYTES) {
+        setError(`"${original.name}" sigue pesando más de 3 MB incluso reducida y se omitió.`);
+        continue;
+      }
+      accepted.push(file);
     }
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
+    if (picked.length > room) {
+      setError(`Sólo se agregaron ${room} fotos: el máximo es ${MAX_IMAGES}.`);
+    }
+
+    setImageFiles((current) => [...current, ...accepted]);
+    setImagePreviews((current) => [...current, ...accepted.map((file) => URL.createObjectURL(file))]);
+  };
+
+  const dropPending = (position) => {
+    setImageFiles((current) => current.filter((_, index) => index !== position));
+    setImagePreviews((current) => {
+      // Release the object URL so the blob can be collected.
+      URL.revokeObjectURL(current[position]);
+      return current.filter((_, index) => index !== position);
+    });
   };
 
   const update = (event) => {
@@ -105,7 +132,7 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       commune: form.commune.trim(),
       delivery: form.delivery.trim(),
       endsAt,
-      imageFile,
+      imageFiles,
     }).catch((submitError) => setError(describeApiError(submitError)));
   };
 
@@ -169,11 +196,27 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       </div>
 
       <div className="field field--wide">
-        <label htmlFor="image">Fotografía del producto <span className="field__optional">(opcional)</span></label>
-        <input id="image" name="image" type="file" accept="image/jpeg,image/png,image/webp" onChange={pickImage} />
-        <small>JPG, PNG o WebP, hasta 3 MB. Si no subes ninguna, la publicación se muestra sin foto.</small>
-        {(imagePreview || auction?.imageUrl) && (
-          <img className="image-preview" src={imagePreview || auction.imageUrl} alt="Vista previa del producto" />
+        <label htmlFor="images">Fotografías del producto <span className="field__optional">(opcional)</span></label>
+        <input id="images" name="images" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={pickImages} />
+        <small>
+          Hasta {MAX_IMAGES} fotos JPG, PNG o WebP. Se reducen automáticamente antes de subirlas.
+          Si no subes ninguna, la publicación se muestra sin fotos.
+        </small>
+        {(imagePreviews.length > 0 || alreadyPublished > 0) && (
+          <ul className="image-previews">
+            {auction?.images?.map((image) => (
+              <li key={image.id}>
+                <img src={image.url} alt="Foto publicada" />
+                <button type="button" onClick={() => onRemoveImage?.(image.id)} aria-label="Quitar esta foto">×</button>
+              </li>
+            ))}
+            {imagePreviews.map((preview, position) => (
+              <li key={preview}>
+                <img src={preview} alt={`Foto por subir ${position + 1}`} />
+                <button type="button" onClick={() => dropPending(position)} aria-label="Quitar esta foto">×</button>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
 
