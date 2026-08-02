@@ -156,7 +156,7 @@ async function penalizeMatch(client, match, outcome, at) {
 
   await client.query(
     `UPDATE auction_matches
-     SET status = $2, responded_at = CASE WHEN $2 = 'REJECTED' THEN $3 ELSE NULL END
+     SET status = $2, responded_at = CASE WHEN $2 = 'REJECTED' THEN $3::timestamptz ELSE NULL END
      WHERE id = $1`,
     [match.id, outcome, at],
   );

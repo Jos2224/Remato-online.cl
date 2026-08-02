@@ -55,6 +55,12 @@ async function seedDemo() {
   if (config.isProduction) {
     throw new Error('The demo seed is disabled when NODE_ENV=production');
   }
+  if (!config.demoPassword) {
+    throw new Error(
+      'DEMO_PASSWORD is not configured. Set one (min 12 chars) to create the demo accounts, ' +
+        'or skip the demo seed entirely.',
+    );
+  }
 
   const passwordHash = await bcrypt.hash(config.demoPassword, 12);
   await withTransaction(async (client) => {

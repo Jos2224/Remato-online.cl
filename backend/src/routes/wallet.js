@@ -91,7 +91,7 @@ router.post(
       await client.query(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, description)
-         VALUES ($1, 'WITHDRAWAL', -$2, 'Retiro simulado por el usuario')`,
+         VALUES ($1, 'WITHDRAWAL', -$2::bigint, 'Retiro simulado por el usuario')`,
         [request.user.id, amount],
       );
       return updated.rows[0];

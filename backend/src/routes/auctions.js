@@ -270,7 +270,7 @@ router.post(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, frozen_delta,
            auction_id, bid_id, description)
-         VALUES ($1, 'BID_HOLD', -$2, $2, $3, $4, $5)`,
+         VALUES ($1, 'BID_HOLD', -$2::bigint, $2::bigint, $3, $4, $5)`,
         [
           request.user.id,
           additionalHold,
@@ -346,7 +346,7 @@ router.delete(
         `INSERT INTO ledger_entries
           (user_id, entry_type, available_delta, frozen_delta,
            auction_id, bid_id, description)
-         VALUES ($1, 'BID_RELEASE', $2, -$2, $3, $4, 'Puja retirada antes del cierre')`,
+         VALUES ($1, 'BID_RELEASE', $2::bigint, -$2::bigint, $3, $4, 'Puja retirada antes del cierre')`,
         [request.user.id, bid.amount, auction.id, bid.id],
       );
       return { closed: false };

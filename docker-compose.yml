@@ -5,9 +5,11 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-rematoonline}
       POSTGRES_USER: ${POSTGRES_USER:-rematoonline}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rematoonline_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio (openssl rand -base64 32)}
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Por defecto sólo loopback: la base nunca queda expuesta en la red del host.
+      # POSTGRES_PORT puede incluir la dirección de bind, p. ej. "127.0.0.1:5432".
+      - "${POSTGRES_PORT:-127.0.0.1:5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,19 +26,21 @@ services:
     environment:
       NODE_ENV: production
       PORT: 4000
-      DATABASE_URL: postgresql://${POSTGRES_USER:-rematoonline}:${POSTGRES_PASSWORD:-rematoonline_local}@postgres:5432/${POSTGRES_DB:-rematoonline}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-rematoonline}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD es obligatorio}@postgres:5432/${POSTGRES_DB:-rematoonline}
       DATABASE_SSL: "false"
-      JWT_SECRET: ${JWT_SECRET:-cambia-esta-clave-en-produccion}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET es obligatorio (openssl rand -base64 48)}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@rematoonline.cl}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-cambia-esta-clave-admin}
-      DEMO_PASSWORD: ${DEMO_PASSWORD:-demo12345}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD es obligatorio (openssl rand -base64 24)}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,http://localhost:4173}
       RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       TZ: America/Santiago
     ports:
-      - "${BACKEND_PORT:-4000}:4000"
+      # Sólo loopback por defecto: el acceso público entra por nginx, no directo al backend.
+      - "${BACKEND_PORT:-127.0.0.1:4000}:4000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +66,8 @@ services:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000/api}
     restart: unless-stopped
     ports:
-      - "${FRONTEND_PORT:-4173}:80"
+      # Sólo loopback por defecto: nginx del host publica el sitio.
+      - "${FRONTEND_PORT:-127.0.0.1:4173}:80"
     depends_on:
       backend:
         condition: service_healthy
