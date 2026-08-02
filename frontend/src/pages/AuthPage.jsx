@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { InlineNotice, Spinner } from "../components/States";
 import { describeApiError } from "../utils/format";
+import { LegalConsent } from "../components/LegalConsent";
 
 export function AuthPage({ mode }) {
   const registering = mode === "register";
@@ -12,6 +13,8 @@ export function AuthPage({ mode }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  // Documentos firmados al registrarse; el servidor vuelve a validarlos.
+  const [acceptedDocuments, setAcceptedDocuments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   if (isAuthenticated) return <Navigate to="/cuenta" replace />;
@@ -25,7 +28,10 @@ export function AuthPage({ mode }) {
     }
     setSubmitting(true);
     try {
-      await (registering ? register : login)({ email: email.trim().toLowerCase(), password });
+      const credentials = { email: email.trim().toLowerCase(), password };
+      await (registering
+        ? register({ ...credentials, acceptedDocuments })
+        : login(credentials));
       const destination = location.state?.from?.pathname || "/cuenta";
       navigate(destination, { replace: true });
     } catch (nextError) {
@@ -48,6 +54,7 @@ export function AuthPage({ mode }) {
 
         <form className="auth-form" onSubmit={submit} noValidate>
           {error && <InlineNotice type="error">{error}</InlineNotice>}
+          {registering && <LegalConsent context="REGISTRATION" onChange={setAcceptedDocuments} />}
           <div className="field">
             <label htmlFor="email">Correo electrónico</label>
             <input id="email" type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="tu@correo.cl" required />

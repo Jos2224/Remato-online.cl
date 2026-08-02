@@ -11,6 +11,8 @@ import { asyncHandler } from '../lib/async-handler.js';
 import { badRequest, conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
 import { MAX_IMAGES_PER_AUCTION, MAX_IMAGE_BYTES, deleteImage, storeImage } from '../lib/images.js';
 import { mailEnabled } from '../lib/mailer.js';
+import { ACCEPTANCE_CONTEXTS } from '../domain/legal.js';
+import { requireAcceptance, signatureEvidence } from '../services/legal.js';
 import { requireAtLeastThreeMinutesAhead } from '../lib/time.js';
 import { moneySchema, validate } from '../lib/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
@@ -65,6 +67,8 @@ const createSchema = z
   .object({
     ...auctionFields,
     startingPrice: moneySchema('El precio inicial'),
+    // Casillas marcadas al publicar. Se validan contra los documentos realmente exigidos.
+    acceptedDocuments: z.array(z.string().trim().min(1)).default([]),
   })
   .strict();
 
@@ -74,7 +78,12 @@ const updateSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Debes enviar al menos un cambio.');
 
-const bidSchema = z.object({ amount: moneySchema('La puja') }).strict();
+const bidSchema = z
+  .object({
+    amount: moneySchema('La puja'),
+    acceptedDocuments: z.array(z.string().trim().min(1)).default([]),
+  })
+  .strict();
 
 const listSchema = z.object({
   status: z.enum(['ACTIVE', 'MATCHING', 'SOLD', 'NO_MATCH']).optional(),
@@ -129,25 +138,40 @@ router.post(
     const input = validate(createSchema, request.body);
     const closesAt = requireAtLeastThreeMinutesAhead(input.endsAt, DateTime.utc());
 
-    const inserted = await pool.query(
-      `INSERT INTO auctions
-        (seller_id, title, description, category, product_condition,
-         starting_price, commune, delivery_method, closes_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       RETURNING id`,
-      [
-        request.user.id,
-        input.title,
-        input.description,
-        input.category,
-        input.condition,
-        input.startingPrice,
-        input.commune,
-        input.delivery,
-        closesAt.toJSDate(),
-      ],
-    );
-    const auction = await getAuctionById(inserted.rows[0].id, request.user);
+    // Publicar y firmar las Reglas de Venta ocurren en la misma transacción: no puede
+    // quedar una publicación sin su consentimiento asociado.
+    const auctionId = await withTransaction(async (client) => {
+      const inserted = await client.query(
+        `INSERT INTO auctions
+          (seller_id, title, description, category, product_condition,
+           starting_price, commune, delivery_method, closes_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          request.user.id,
+          input.title,
+          input.description,
+          input.category,
+          input.condition,
+          input.startingPrice,
+          input.commune,
+          input.delivery,
+          closesAt.toJSDate(),
+        ],
+      );
+      await requireAcceptance(
+        {
+          userId: request.user.id,
+          context: ACCEPTANCE_CONTEXTS.PUBLISH,
+          accepted: input.acceptedDocuments,
+          auctionId: inserted.rows[0].id,
+          evidence: signatureEvidence(request),
+        },
+        client,
+      );
+      return inserted.rows[0].id;
+    });
+    const auction = await getAuctionById(auctionId, request.user);
     response.status(201).json({ data: { auction } });
   }),
 );
@@ -326,7 +350,8 @@ router.post(
   asyncHandler(async (request, response) => {
     requireCommonUser(request);
     await requireVerifiedEmail(request);
-    const { amount } = validate(bidSchema, request.body);
+    const input = validate(bidSchema, request.body);
+    const { amount } = input;
 
     const outcome = await withTransaction(async (client) => {
       const result = await client.query(
@@ -342,6 +367,19 @@ router.post(
       if (auction.status !== 'ACTIVE' || new Date(auction.closes_at) <= now) {
         return { closed: true };
       }
+
+      // Las Reglas de Compra se firman en la misma transacción que congela el dinero:
+      // la garantía del 10% es una cláusula penal y sólo obliga si consta el acuerdo.
+      await requireAcceptance(
+        {
+          userId: request.user.id,
+          context: ACCEPTANCE_CONTEXTS.BID,
+          accepted: input.acceptedDocuments,
+          auctionId: auction.id,
+          evidence: signatureEvidence(request),
+        },
+        client,
+      );
 
       const highestResult = await client.query(
         `SELECT max(amount) AS highest FROM bids

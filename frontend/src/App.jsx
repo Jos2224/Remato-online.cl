@@ -6,6 +6,7 @@ import { AuctionPage } from "./pages/AuctionPage";
 import { AuthPage } from "./pages/AuthPage";
 import { EditAuctionPage } from "./pages/EditAuctionPage";
 import { HomePage } from "./pages/HomePage";
+import { LegalDocumentPage, LegalIndexPage } from "./pages/LegalPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { MyAuctionsPage } from "./pages/MyAuctionsPage";
 import { MyBidsPage } from "./pages/MyBidsPage";
@@ -22,6 +23,8 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="subastas/:id" element={<AuctionPage />} />
+        <Route path="legal" element={<LegalIndexPage />} />
+        <Route path="legal/:slug" element={<LegalDocumentPage />} />
         <Route path="ingresar" element={<AuthPage mode="login" />} />
         <Route path="registro" element={<AuthPage mode="register" />} />
         <Route path="publicar" element={protect(<PublishPage />, true)} />

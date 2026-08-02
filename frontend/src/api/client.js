@@ -246,6 +246,7 @@ function auctionPayload(data) {
     commune: data.commune,
     delivery: data.delivery,
     endsAt: data.endsAt,
+    ...(data.acceptedDocuments ? { acceptedDocuments: data.acceptedDocuments } : {}),
   };
 }
 
@@ -304,8 +305,9 @@ export const auctionsApi = {
   async update(id, data) {
     return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}`, { method: "PATCH", body: auctionPayload(data) }), ["auction"]));
   },
-  async bid(id, amount) {
-    return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}/bids`, { method: "POST", body: { amount } }), ["auction"]));
+  async bid(id, amount, acceptedDocuments) {
+    const body = acceptedDocuments?.length ? { amount, acceptedDocuments } : { amount };
+    return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}/bids`, { method: "POST", body }), ["auction"]));
   },
   async withdrawBid(id) {
     return request(`/auctions/${encodeURIComponent(id)}/bids/mine`, { method: "DELETE" });
@@ -360,6 +362,25 @@ export const matchesApi = {
   },
   async reject(id) {
     return unwrap(await request(`/matches/${encodeURIComponent(id)}/reject`, { method: "POST" }), ["auction", "match"]);
+  },
+};
+
+export const legalApi = {
+  async list() {
+    const payload = unwrap(await request("/legal", { token: null }), ["documents"]);
+    return Array.isArray(payload) ? payload : [];
+  },
+  async get(slug) {
+    return unwrap(await request(`/legal/${encodeURIComponent(slug)}`, { token: null }), ["document"]);
+  },
+  // Documentos que esta persona aún no ha firmado en su versión vigente.
+  async pending(context) {
+    const payload = unwrap(await request(`/legal/pending/${encodeURIComponent(context)}`), ["pending"]);
+    return Array.isArray(payload) ? payload : [];
+  },
+  async history() {
+    const payload = unwrap(await request("/legal/me/history"), ["acceptances"]);
+    return Array.isArray(payload) ? payload : [];
   },
 };
 

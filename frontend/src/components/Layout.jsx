@@ -75,6 +75,13 @@ function Footer() {
           <p><strong>Match:</strong> 5% de comisión</p>
           <p><strong>Rechazo:</strong> pierdes la garantía del 10%</p>
         </div>
+        <nav className="footer__legal" aria-label="Documentos legales">
+          <Link to="/legal">Legal</Link>
+          <Link to="/legal/terminos-y-condiciones">Términos y Condiciones</Link>
+          <Link to="/legal/politica-de-privacidad">Privacidad</Link>
+          <Link to="/legal/reglas-de-compra">Reglas de Compra</Link>
+          <Link to="/legal/reglas-de-venta">Reglas de Venta</Link>
+        </nav>
       </div>
     </footer>
   );

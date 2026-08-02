@@ -3,6 +3,7 @@ import { chileInputToIso, describeApiError, formatMoney, minimumChileInput, numb
 import { serverNowMs } from "../utils/server-clock";
 import { InlineNotice, Spinner } from "./States";
 import { downscaleImage } from "../utils/image";
+import { LegalConsent } from "./LegalConsent";
 
 const CATEGORIES = [
   "Tecnología",
@@ -38,6 +39,8 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
   const [error, setError] = useState("");
   // Optional photos. Kept out of `form` because these are Files, not text fields, and
   // they are uploaded in follow-up requests once the auction has an id.
+  // Sólo se piden al publicar; al editar no se vuelve a firmar nada.
+  const [acceptedDocuments, setAcceptedDocuments] = useState([]);
   const [imageFiles, setImageFiles] = useState([]);
   const [imagePreviews, setImagePreviews] = useState([]);
   const minimum = useMemo(() => minimumChileInput(3, serverNowMs()), []);
@@ -133,6 +136,7 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
       delivery: form.delivery.trim(),
       endsAt,
       imageFiles,
+      ...(editing ? {} : { acceptedDocuments }),
     }).catch((submitError) => setError(describeApiError(submitError)));
   };
 
@@ -232,6 +236,12 @@ export function AuctionForm({ auction, onSubmit, submitting, onRemoveImage }) {
         <strong>Antes de {editing ? "guardar" : "publicar"}</strong>
         <p>La subasta se cierra a la hora indicada; una puja en los últimos 2 minutos la prorroga otros 2. Cada puja es un compromiso de compra y deja ese dinero congelado. Una vez que haya pujas, la fecha de cierre queda fija.</p>
       </div>
+
+      {!editing && (
+        <div className="field--wide">
+          <LegalConsent context="PUBLISH" onChange={setAcceptedDocuments} disabled={submitting} />
+        </div>
+      )}
 
       <div className="auction-form__actions field--wide">
         <button className="button button--red button--large" type="submit" disabled={submitting}>

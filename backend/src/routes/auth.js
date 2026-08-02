@@ -8,11 +8,19 @@ import { config } from '../config.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { badRequest, conflict, forbidden, unauthorized } from '../lib/api-error.js';
 import { mailEnabled, sendMail, verificationEmail } from '../lib/mailer.js';
+import { ACCEPTANCE_CONTEXTS } from '../domain/legal.js';
+import { requireAcceptance, signatureEvidence } from '../services/legal.js';
 import { validate } from '../lib/validation.js';
 import { serializeUser, serializeWallet } from '../lib/serializers.js';
 import { requireAuth, signAccessToken } from '../middleware/auth.js';
 
 const router = Router();
+
+const registerSchema = z.object({
+  // Casillas marcadas en pantalla. La firma se valida contra los documentos realmente
+  // exigidos, no contra lo que el cliente diga haber mostrado.
+  acceptedDocuments: z.array(z.string().trim().min(1)).default([]),
+});
 
 const credentialsSchema = z.object({
   email: z
@@ -30,7 +38,7 @@ const credentialsSchema = z.object({
 router.post(
   '/register',
   asyncHandler(async (request, response) => {
-    const input = validate(credentialsSchema, request.body);
+    const input = validate(credentialsSchema.merge(registerSchema), request.body);
     if (input.email === config.adminEmail) {
       throw forbidden('Ese correo está reservado para la administración.');
     }
@@ -65,6 +73,17 @@ router.post(
         ],
       );
       await client.query('INSERT INTO wallets (user_id) VALUES ($1)', [inserted.rows[0].id]);
+      // La firma se registra dentro de la misma transacción que crea la cuenta: no puede
+      // existir una cuenta sin su consentimiento, ni un consentimiento sin cuenta.
+      await requireAcceptance(
+        {
+          userId: inserted.rows[0].id,
+          context: ACCEPTANCE_CONTEXTS.REGISTRATION,
+          accepted: input.acceptedDocuments,
+          evidence: signatureEvidence(request),
+        },
+        client,
+      );
       return inserted.rows[0];
     });
 

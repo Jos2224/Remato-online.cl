@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { Countdown } from "../components/Countdown";
 import { StatusBadge } from "../components/StatusBadge";
 import { AuctionGallery } from "../components/AuctionGallery";
+import { LegalConsent } from "../components/LegalConsent";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
 import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
@@ -21,6 +22,8 @@ export function AuctionPage() {
   });
   const [amount, setAmount] = useState("");
   const [actionError, setActionError] = useState("");
+  // Reglas de Compra: se firman junto con la primera puja.
+  const [acceptedDocuments, setAcceptedDocuments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -57,7 +60,7 @@ export function AuctionPage() {
     }
     setSubmitting(true);
     try {
-      const updated = await auctionsApi.bid(auction.id, numericAmount);
+      const updated = await auctionsApi.bid(auction.id, numericAmount, acceptedDocuments);
       setAuction(updated);
       showToast(`Puja de ${formatMoney(numericAmount)} registrada. Ese monto quedó congelado.`);
     } catch (nextError) {
@@ -172,6 +175,7 @@ export function AuctionPage() {
 
             {canBid && isAuthenticated && (
               <form className="bid-form" onSubmit={placeBid}>
+                <LegalConsent context="BID" onChange={setAcceptedDocuments} />
                 <label htmlFor="bidAmount">Tu oferta</label>
                 <div className="money-input money-input--large">
                   <span>$</span>
