@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resetServerClock, serverNowMs, setServerInstant } from "./server-clock";
+import { resetServerClock, serverNowMs, setServerInstant } from "./server-clock.js";
 
 describe("server clock", () => {
   afterEach(() => {

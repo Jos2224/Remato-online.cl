@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chileInputToIso, formatDuration, toChileInputValue } from "./format";
+import { chileInputToIso, formatDuration, toChileInputValue } from "./format.js";
 
 describe("utilidades horarias", () => {
   it("convierte una hora de invierno chilena a UTC", () => {

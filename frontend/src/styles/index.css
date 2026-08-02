@@ -2543,3 +2543,187 @@ tbody tr:last-child td {
   font-size: 0.78rem;
   line-height: 1.5;
 }
+
+/* ============================================================================
+   Refinamientos
+   Ajustes de acabado sobre el diseño existente. No cambian la disposición, la
+   paleta ni las proporciones: corrigen detalles que se notan al usar la página
+   (cifras que bailan, foco poco visible, transiciones bruscas, viudas de texto).
+   ============================================================================ */
+
+/* Las cifras cambian cada segundo en el contador y a cada puja en los precios.
+   Con dígitos de ancho variable el texto "salta"; tabular-nums lo deja quieto. */
+.countdown,
+.auction-card__price strong,
+.bid-panel__price strong,
+.money-input input,
+.wallet-figure,
+.legal-document__meta code,
+table td,
+table th {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Foco visible sobre cualquier fondo: el anillo rojo se pierde sobre el hero
+   oscuro, así que se le añade un halo claro por debajo. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--red);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--red) 18%, transparent);
+}
+
+.hero button:focus-visible,
+.hero a:focus-visible {
+  outline-color: var(--white);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.28);
+}
+
+/* Los botones ya suben al pasar el cursor; faltaba el gesto de vuelta al pulsar. */
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+  transition-duration: 60ms;
+}
+
+/* El campo enfocado se distingue por su borde, no sólo por el anillo del sistema. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--line-dark);
+}
+
+.money-input:focus-within {
+  border-color: var(--ink);
+}
+
+/* Tarjetas: la transición existente sube y baja; se le da una curva más suave y
+   una sombra que acompaña, en vez de aparecer de golpe. */
+.auction-card {
+  transition:
+    transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 200ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-color 200ms ease;
+}
+
+.auction-card:hover {
+  box-shadow: 0 10px 30px rgba(30, 28, 24, 0.07);
+}
+
+/* Títulos y párrafos: evita líneas huérfanas y cortes desequilibrados. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+.legal-document__body li {
+  text-wrap: pretty;
+}
+
+/* Selección de texto en el tono de la marca. */
+::selection {
+  background: color-mix(in srgb, var(--red) 20%, transparent);
+  color: var(--ink);
+}
+
+/* Barras de desplazamiento discretas, en la paleta del sitio. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-dark) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--line-dark);
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-soft);
+  background-clip: content-box;
+}
+
+/* Las fotos aparecen en vez de saltar cuando terminan de cargar. */
+.auction-card__media img,
+.gallery__main img,
+.gallery__thumb img {
+  animation: aparecer 260ms ease both;
+}
+
+@keyframes aparecer {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Estados deshabilitados coherentes en todo el sitio. */
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.money-input:has(input:disabled) {
+  opacity: 0.55;
+}
+
+/* Los sellos se alinean por su línea base con el texto que acompañan. */
+.trust-row {
+  align-items: center;
+}
+
+/* La tira de miniaturas se desplaza sin barra visible y con inercia por foto. */
+.gallery__thumbs {
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.gallery__thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery__thumbs li {
+  scroll-snap-align: start;
+}
+
+/* Documentos legales impresos: sin cromo del sitio, sólo el texto. */
+@media print {
+  .site-header,
+  .site-footer,
+  .breadcrumbs,
+  .legal-consent {
+    display: none !important;
+  }
+
+  .legal-document__body {
+    max-width: none;
+    font-size: 11pt;
+  }
+
+  a[href^="http"]::after {
+    content: " (" attr(href) ")";
+    font-size: 9pt;
+  }
+}
+
+/* Se respeta la preferencia del sistema: nada de movimiento innecesario. */
+@media (prefers-reduced-motion: reduce) {
+  .auction-card,
+  .auction-card__media img,
+  .gallery__main img,
+  .gallery__thumb img,
+  .lightbox__image {
+    animation: none !important;
+    transition: none !important;
+  }
+}

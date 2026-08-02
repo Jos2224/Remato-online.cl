@@ -84,7 +84,10 @@ export function HomePage() {
             <h2>Subastas activas</h2>
             <p>
               Productos que todavía aceptan ofertas.
-              {total > 0 && ` ${active.length} de ${total} publicaciones.`}
+              {/* Sólo se comparan cosas comparables: antes se mostraba "N de M" mezclando
+                  las activas filtradas con el total de TODAS las publicaciones. */}
+              {active.length > 0 && ` ${active.length} ${active.length === 1 ? "subasta activa" : "subastas activas"}.`}
+              {total > active.length && ` ${total} publicaciones en total.`}
             </p>
           </div>
           <div className="filters" role="search">

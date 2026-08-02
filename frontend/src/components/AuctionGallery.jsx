@@ -136,7 +136,17 @@ export function AuctionGallery({ images = [], title = "Producto" }) {
             setZoomed(false);
           }}
         >
-          <button type="button" className="lightbox__close" aria-label="Cerrar">×</button>
+          <button
+            type="button"
+            className="lightbox__close"
+            aria-label="Cerrar"
+            onClick={() => {
+              setLightboxOpen(false);
+              setZoomed(false);
+            }}
+          >
+            ×
+          </button>
 
           <div
             className="lightbox__stage"

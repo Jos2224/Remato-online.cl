@@ -78,17 +78,18 @@ export function LegalIndexPage() {
       <span className="eyebrow">Legal</span>
       <h1>Documentos legales</h1>
       <p className="legal-index__intro">
-        Estas son las condiciones bajo las que opera RematoOnline. Se aceptan firmando
-        electrónicamente al registrarte, al publicar y al pujar; puedes leerlas aquí en
-        cualquier momento, sin necesidad de tener una cuenta.
+        Estas son las condiciones bajo las que opera RematoOnline. Se firman
+        electrónicamente al publicar o al pujar, que es cuando asumes obligaciones
+        reales; crear una cuenta no exige aceptar nada. Puedes leerlas aquí en cualquier
+        momento, sin necesidad de tener cuenta.
       </p>
       <ul className="legal-index__list">
-        {documents.map((document) => (
-          <li key={document.slug}>
-            <Link to={`/legal/${document.slug}`}>
-              <strong>{document.title}</strong>
-              <span>{document.summary}</span>
-              <small>Versión {document.version}</small>
+        {documents.map((item) => (
+          <li key={item.slug}>
+            <Link to={`/legal/${item.slug}`}>
+              <strong>{item.title}</strong>
+              <span>{item.summary}</span>
+              <small>Versión {item.version}</small>
             </Link>
           </li>
         ))}
@@ -99,13 +100,14 @@ export function LegalIndexPage() {
 
 export function LegalDocumentPage() {
   const { slug } = useParams();
-  const { data: document, loading, error, reload } = usePollingQuery(
+  // Ojo: no llamar `document` a esta variable; taparía el `document` del navegador.
+  const { data: legalDocument, loading, error, reload } = usePollingQuery(
     () => legalApi.get(slug),
     { interval: 0, deps: [slug] },
   );
 
   if (loading) return <PageLoader label="Cargando documento" />;
-  if (error || !document) {
+  if (error || !legalDocument) {
     return (
       <div className="container page-space">
         <ErrorState title="No encontramos ese documento" error={error} onRetry={reload} />
@@ -120,15 +122,15 @@ export function LegalDocumentPage() {
         <span>/</span>
         <Link to="/legal">Legal</Link>
         <span>/</span>
-        <span>{document.title}</span>
+        <span>{legalDocument.title}</span>
       </nav>
 
-      <article className="legal-document__body">{renderBody(document.body)}</article>
+      <article className="legal-document__body">{renderBody(legalDocument.body)}</article>
 
       <footer className="legal-document__meta">
         <p>
-          Versión {document.version} · Huella SHA-256 del texto:{" "}
-          <code>{document.contentHash}</code>
+          Versión {legalDocument.version} · Huella SHA-256 del texto:{" "}
+          <code>{legalDocument.contentHash}</code>
         </p>
         <p>
           Esta huella identifica el texto exacto. Cuando aceptas un documento, queda
