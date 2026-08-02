@@ -104,3 +104,39 @@ export function numberFromInput(value) {
   const normalized = String(value ?? "").replace(/[^\d]/g, "");
   return normalized ? Number(normalized) : 0;
 }
+
+// Field labels for validation errors coming back from the API.
+const FIELD_LABELS = {
+  title: "Título",
+  description: "Descripción",
+  category: "Categoría",
+  condition: "Estado del producto",
+  commune: "Comuna",
+  delivery: "Coordinación de entrega",
+  endsAt: "Fecha de cierre",
+  startingPrice: "Precio inicial",
+  amount: "Monto",
+  email: "Correo",
+  password: "Contraseña",
+};
+
+// The API returns a generic headline plus a per-field breakdown. Showing only the
+// headline ("Hay datos inválidos.") leaves the user with no idea what to correct, so
+// the details are folded into the message.
+export function describeApiError(error) {
+  const headline = error?.message || "No pudimos completar la solicitud.";
+  const details = error?.details;
+  if (!Array.isArray(details) || details.length === 0) return headline;
+
+  const lines = details
+    .map((detail) => {
+      const message = detail?.message ?? String(detail ?? "").trim();
+      if (!message) return null;
+      const path = detail?.path ? String(detail.path).split(".").pop() : "";
+      const label = FIELD_LABELS[path] ?? path;
+      return label ? `${label}: ${message}` : message;
+    })
+    .filter(Boolean);
+
+  return lines.length ? lines.join(" · ") : headline;
+}

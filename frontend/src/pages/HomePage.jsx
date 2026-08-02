@@ -4,17 +4,28 @@ import { auctionsApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { AuctionCard } from "../components/AuctionCard";
 import { EmptyState, ErrorState, PageLoader } from "../components/States";
-import { usePollingQuery } from "../hooks/usePollingQuery";
+import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
+
+const SORTS = {
+  closing: { label: "Cierre más próximo", compare: (a, b) => new Date(a.endsAt) - new Date(b.endsAt) },
+  priceAsc: { label: "Precio: menor a mayor", compare: (a, b) => a.currentPrice - b.currentPrice },
+  priceDesc: { label: "Precio: mayor a menor", compare: (a, b) => b.currentPrice - a.currentPrice },
+  bids: { label: "Más pujas", compare: (a, b) => b.bidCount - a.bidCount },
+};
 
 export function HomePage() {
   const { isAuthenticated, user } = useAuth();
   const canTrade = !isAuthenticated || user?.role === "user";
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todas");
-  const { data: auctions, loading, error, reload } = usePollingQuery(
-    () => auctionsApi.list({ limit: 100 }),
-    { interval: 12_000 },
+  const [sort, setSort] = useState("closing");
+  const { data: page, loading, error, reload } = usePollingQuery(
+    () => auctionsApi.listPaged({ limit: 100 }),
+    // Speeds up to 2s in the final minute of the auction closing soonest.
+    { interval: (current) => urgencyInterval((current?.items ?? []).map((item) => item.endsAt)) },
   );
+  const auctions = page?.items;
+  const total = page?.total ?? 0;
 
   const categories = useMemo(
     () => ["Todas", ...new Set((auctions || []).map((auction) => auction.category).filter(Boolean))],
@@ -25,14 +36,14 @@ export function HomePage() {
     const term = query.trim().toLocaleLowerCase("es");
     return (auctions || []).filter((auction) => {
       const matchesCategory = category === "Todas" || auction.category === category;
-      const haystack = `${auction.title} ${auction.description} ${auction.seller.email} ${auction.commune}`.toLocaleLowerCase("es");
+      const haystack = `${auction.title} ${auction.description} ${auction.seller.displayName} ${auction.commune}`.toLocaleLowerCase("es");
       return matchesCategory && (!term || haystack.includes(term));
     });
   }, [auctions, category, query]);
 
   const active = visible
     .filter((auction) => auction.status === "active")
-    .sort((a, b) => new Date(a.endsAt) - new Date(b.endsAt));
+    .sort(SORTS[sort]?.compare ?? SORTS.closing.compare);
   const ended = visible
     .filter((auction) => auction.status !== "active")
     .sort((a, b) => new Date(b.endsAt) - new Date(a.endsAt));
@@ -58,8 +69,8 @@ export function HomePage() {
             <p className="hero__number">01</p>
             <h2>Directo y transparente.</h2>
             <ul>
-              <li><span>Sin incremento mínimo</span><strong>La oferta la eliges tú</strong></li>
-              <li><span>Cierre exacto</span><strong>Reloj de Chile</strong></li>
+              <li><span>Incremento mínimo por tramo</span><strong>Pujas que suman de verdad</strong></li>
+              <li><span>Cierre exacto con prórroga</span><strong>Reloj de Chile</strong></li>
               <li><span>Historial público</span><strong>Cada puja activa queda visible</strong></li>
             </ul>
           </aside>
@@ -71,7 +82,10 @@ export function HomePage() {
           <div>
             <span className="eyebrow">Mercado abierto</span>
             <h2>Subastas activas</h2>
-            <p>Productos que todavía aceptan ofertas.</p>
+            <p>
+              Productos que todavía aceptan ofertas.
+              {total > 0 && ` ${active.length} de ${total} publicaciones.`}
+            </p>
           </div>
           <div className="filters" role="search">
             <label className="search-field">
@@ -83,6 +97,14 @@ export function HomePage() {
               <span className="sr-only">Filtrar por categoría</span>
               <select value={category} onChange={(event) => setCategory(event.target.value)}>
                 {categories.map((item) => <option value={item} key={item}>{item}</option>)}
+              </select>
+            </label>
+            <label>
+              <span className="sr-only">Ordenar subastas</span>
+              <select value={sort} onChange={(event) => setSort(event.target.value)}>
+                {Object.entries(SORTS).map(([key, option]) => (
+                  <option value={key} key={key}>{option.label}</option>
+                ))}
               </select>
             </label>
           </div>

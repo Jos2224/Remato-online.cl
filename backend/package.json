@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test",
+    "test": "node --test tests/*.test.js",
     "migrate": "node src/scripts/migrate.js",
     "seed": "node src/scripts/seed.js",
     "seed:demo": "node src/scripts/seed-demo.js"

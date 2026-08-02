@@ -6,15 +6,13 @@ import { MAX_MONEY } from '../domain/money.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { conflict } from '../lib/api-error.js';
 import { serializeLedgerEntry, serializeWallet } from '../lib/serializers.js';
-import { validate } from '../lib/validation.js';
+import { moneySchema, validate } from '../lib/validation.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 router.use(requireAuth);
 
-const amountSchema = z.object({
-  amount: z.number().int().positive().max(MAX_MONEY),
-});
+const amountSchema = z.object({ amount: moneySchema('El monto') });
 
 const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),

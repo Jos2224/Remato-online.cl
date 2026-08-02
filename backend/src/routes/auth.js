@@ -13,8 +13,16 @@ import { requireAuth, signAccessToken } from '../middleware/auth.js';
 const router = Router();
 
 const credentialsSchema = z.object({
-  email: z.string().trim().email().max(320).transform((value) => value.toLowerCase()),
-  password: z.string().min(8).max(128),
+  email: z
+    .string({ required_error: 'Debes indicar tu correo.' })
+    .trim()
+    .email('Ingresa un correo electrónico válido.')
+    .max(320, 'El correo es demasiado largo.')
+    .transform((value) => value.toLowerCase()),
+  password: z
+    .string({ required_error: 'Debes indicar tu contraseña.' })
+    .min(8, 'La contraseña debe tener al menos 8 caracteres.')
+    .max(128, 'La contraseña no puede superar los 128 caracteres.'),
 });
 
 router.post(

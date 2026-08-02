@@ -32,7 +32,7 @@ export function AuctionCard({ auction, muted = false }) {
         <div className="auction-card__meta">
           <div>
             <span>Vendedor</span>
-            <strong>{auction.seller.email || "Cuenta no disponible"}</strong>
+            <strong>{auction.seller.displayName}</strong>
           </div>
           <div>
             <span>{isActive ? "Cierra" : "Cerró"}</span>

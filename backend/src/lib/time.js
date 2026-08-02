@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { config } from '../config.js';
+import { MAX_AUCTION_DAYS } from '../domain/auction.js';
 import { badRequest } from './api-error.js';
 
 export const chileNow = () => DateTime.now().setZone(config.chileTimeZone);
@@ -26,6 +27,14 @@ export function requireAtLeastThreeMinutesAhead(value, now = DateTime.utc()) {
     throw badRequest(
       'CLOSING_TIME_TOO_SOON',
       'El cierre debe quedar al menos 3 minutos en el futuro.',
+    );
+  }
+  // Upper bound too: an unbounded closing date freezes every bidder's funds for as long
+  // as the seller cares to name.
+  if (parsed.toMillis() > now.plus({ days: MAX_AUCTION_DAYS }).toMillis()) {
+    throw badRequest(
+      'CLOSING_TIME_TOO_FAR',
+      `El cierre no puede superar los ${MAX_AUCTION_DAYS} días.`,
     );
   }
   return parsed;

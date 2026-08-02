@@ -1,5 +1,6 @@
 import { pool } from '../db/pool.js';
 import { notFound } from '../lib/api-error.js';
+import { isAdmin, maskEmail, publicAlias } from '../lib/privacy.js';
 
 const auctionSelect = `
   SELECT
@@ -15,6 +16,7 @@ const auctionSelect = `
       ELSE COALESCE(bid_stats.historical_max, a.starting_price)
     END AS current_price,
     sale.gross_amount AS sold_price,
+    sale.buyer_id AS winning_bidder_id,
     buyer.email AS winning_bidder_email,
     my_bid.id AS my_bid_id,
     my_bid.amount AS my_bid_amount,
@@ -59,14 +61,21 @@ const auctionSelect = `
 
 const iso = (value) => (value ? new Date(value).toISOString() : null);
 
-export function serializeBid(row) {
+export function serializeBid(row, viewer) {
+  // The bid history is public, the bidders are not: a full address here is both
+  // personal data and an invitation to close the deal off-platform.
+  const isOwnBid = viewer?.id === row.bidder_id;
+  const privileged = isOwnBid || isAdmin(viewer);
+
   return {
     id: row.id,
     amount: Number(row.amount),
     status: row.status,
     bidder: {
       id: row.bidder_id,
-      email: row.bidder_email,
+      alias: publicAlias(row.bidder_id),
+      ...(privileged ? { email: row.bidder_email } : {}),
+      isMe: Boolean(isOwnBid),
     },
     createdAt: iso(row.created_at),
   };
@@ -75,6 +84,11 @@ export function serializeBid(row) {
 export function serializeAuction(row, viewer) {
   const isOwner = viewer?.id === row.seller_id;
   const isActiveInTime = row.status === 'ACTIVE' && new Date(row.closes_at) > new Date();
+  const admin = isAdmin(viewer);
+  // The winner's address is shared only with the two parties to the sale (and the
+  // administrator), never with anonymous visitors browsing a sold listing.
+  const isWinner = viewer?.id && viewer.id === row.winning_bidder_id;
+  const canSeeCounterparty = isOwner || isWinner || admin;
 
   return {
     id: row.id,
@@ -91,7 +105,11 @@ export function serializeAuction(row, viewer) {
     bidCount: Number(row.bid_count),
     seller: {
       id: row.seller_id,
-      email: row.seller_email,
+      alias: publicAlias(row.seller_id),
+      // Only the seller themselves, the buyer of a closed sale, and the admin get the
+      // real address. Everyone else sees the alias and, once sold, a masked hint.
+      ...(isOwner || admin ? { email: row.seller_email } : {}),
+      ...(isWinner ? { email: maskEmail(row.seller_email) } : {}),
       createdAt: iso(row.seller_created_at),
       salesCount: row.seller_sales_count,
     },
@@ -107,7 +125,11 @@ export function serializeAuction(row, viewer) {
       ? {
           id: row.current_match_id,
           candidateId: row.current_match_candidate_id,
-          candidateEmail: row.current_match_candidate_email,
+          candidateAlias: publicAlias(row.current_match_candidate_id),
+          // The seller needs to know who is deciding; the public does not.
+          ...(isOwner || admin || viewer?.id === row.current_match_candidate_id
+            ? { candidateEmail: row.current_match_candidate_email }
+            : {}),
           position: row.current_match_position,
           amount: Number(row.current_match_amount),
           startedAt: iso(row.current_match_started_at),
@@ -115,7 +137,9 @@ export function serializeAuction(row, viewer) {
           isMine: viewer?.id === row.current_match_candidate_id,
         }
       : null,
-    winningBidderEmail: row.winning_bidder_email ?? null,
+    winningBidderId: row.winning_bidder_id ?? null,
+    winningBidderAlias: row.winning_bidder_id ? publicAlias(row.winning_bidder_id) : null,
+    winningBidderEmail: canSeeCounterparty ? (row.winning_bidder_email ?? null) : null,
     canEdit: Boolean(isOwner && isActiveInTime),
     canBid: Boolean(viewer?.role === 'USER' && !isOwner && isActiveInTime),
     createdAt: iso(row.created_at),
@@ -132,7 +156,7 @@ export async function getAuctionById(auctionId, viewer, db = pool) {
   return serializeAuction(result.rows[0], viewer);
 }
 
-export async function getPublicBids(auctionId, db = pool) {
+export async function getPublicBids(auctionId, viewer, db = pool) {
   const result = await db.query(
     `SELECT b.*, u.email AS bidder_email
      FROM bids b
@@ -142,7 +166,7 @@ export async function getPublicBids(auctionId, db = pool) {
      ORDER BY b.amount DESC, b.created_at ASC`,
     [auctionId],
   );
-  return result.rows.map(serializeBid);
+  return result.rows.map((row) => serializeBid(row, viewer));
 }
 
 export async function listAuctions({

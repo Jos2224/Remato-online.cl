@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { InlineNotice, Spinner } from "../components/States";
+import { describeApiError } from "../utils/format";
 
 export function AuthPage({ mode }) {
   const registering = mode === "register";
@@ -28,7 +29,7 @@ export function AuthPage({ mode }) {
       const destination = location.state?.from?.pathname || "/cuenta";
       navigate(destination, { replace: true });
     } catch (nextError) {
-      setError(nextError.message);
+      setError(describeApiError(nextError));
     } finally {
       setSubmitting(false);
     }

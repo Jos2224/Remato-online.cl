@@ -6,7 +6,7 @@ import { Countdown } from "../components/Countdown";
 import { StatusBadge } from "../components/StatusBadge";
 import { ErrorState, InlineNotice, PageLoader, Spinner } from "../components/States";
 import { useToast } from "../components/Toast";
-import { usePollingQuery } from "../hooks/usePollingQuery";
+import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
 import { formatChileDate, formatChileDateLong, formatMoney, numberFromInput } from "../utils/format";
 
 export function AuctionPage() {
@@ -14,7 +14,8 @@ export function AuctionPage() {
   const { user, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const { data: auction, setData: setAuction, loading, error, reload } = usePollingQuery(() => auctionsApi.get(id), {
-    interval: 10_000,
+    // 2s inside the final minute so the closing price is actually visible moving.
+    interval: (current) => urgencyInterval(current?.endsAt, 10_000),
     deps: [id],
   });
   const [amount, setAmount] = useState("");
@@ -35,11 +36,11 @@ export function AuctionPage() {
   if (!auction) return null;
 
   const isOwner = Boolean(
-    user && (auction.sellerId === user.id || auction.seller.email?.toLowerCase() === user.email?.toLowerCase()),
+    user && auction.sellerId === user.id,
   );
   const canEdit = auction.canEdit ?? auction.capabilities?.canEdit ?? isOwner;
   const isActive = auction.status === "active";
-  const myBid = auction.myBid || activeBids.find((bid) => bid.email?.toLowerCase() === user?.email?.toLowerCase());
+  const myBid = auction.myBid || activeBids.find((bid) => bid.isMine || (user?.id && bid.userId === user.id));
   const canBid =
     isActive &&
     !isOwner &&
@@ -96,7 +97,7 @@ export function AuctionPage() {
             </div>
             <h1>{auction.title}</h1>
             <p className="auction-detail__seller">
-              Publicada por <strong>{auction.seller.email || "Cuenta no disponible"}</strong>
+              Publicada por <strong>{auction.seller.displayName}</strong>
               {auction.seller.createdAt && <> · cuenta desde {formatChileDate(auction.seller.createdAt, { hour: undefined, minute: undefined })}</>}
               <> · {auction.seller.salesCount} ventas</>
             </p>
@@ -132,8 +133,8 @@ export function AuctionPage() {
                     <thead><tr><th>Postor</th><th>Oferta</th><th>Fecha · hora Chile</th></tr></thead>
                     <tbody>
                       {activeBids.map((bid, index) => (
-                        <tr key={bid.id || `${bid.email}-${bid.amount}`} className={index === 0 ? "table-row--leader" : ""}>
-                          <td><span className="rank">{index + 1}</span>{bid.email}</td>
+                        <tr key={bid.id || `${bid.userId}-${bid.amount}`} className={index === 0 ? "table-row--leader" : ""}>
+                          <td><span className="rank">{index + 1}</span>{bid.displayName}</td>
                           <td><strong>{formatMoney(bid.amount)}</strong></td>
                           <td>{formatChileDate(bid.createdAt)}</td>
                         </tr>

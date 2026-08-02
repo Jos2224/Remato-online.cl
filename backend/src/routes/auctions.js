@@ -3,11 +3,13 @@ import { DateTime } from 'luxon';
 import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
-import { MAX_MONEY } from '../domain/money.js';
+import { ANTI_SNIPE_WINDOW_MS, minimumIncrement, minimumNextBid } from '../domain/auction.js';
+import { CATEGORIES, CONDITIONS } from '../domain/taxonomy.js';
+import { stripMarkup, stripMarkupMultiline } from '../lib/sanitize.js';
 import { asyncHandler } from '../lib/async-handler.js';
 import { conflict, forbidden, notFound, unauthorized } from '../lib/api-error.js';
 import { requireAtLeastThreeMinutesAhead } from '../lib/time.js';
-import { validate } from '../lib/validation.js';
+import { moneySchema, validate } from '../lib/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
 import { getAuctionById, getPublicBids, listAuctions } from '../services/auction-read.js';
 import {
@@ -18,20 +20,48 @@ import {
 
 const router = Router();
 
+// Free text is stripped of markup before the length checks run, so padding a short
+// title with tags cannot sneak past the minimum.
+const cleanText = (min, max, field) =>
+  z
+    .string({ required_error: `Debes indicar ${field}.`, invalid_type_error: `${field} debe ser texto.` })
+    .transform(stripMarkup)
+    .refine((value) => value.length >= min, {
+      message: `${field} debe tener al menos ${min} caracteres.`,
+    })
+    .refine((value) => value.length <= max, {
+      message: `${field} no puede superar los ${max} caracteres.`,
+    });
+
 const auctionFields = {
-  title: z.string().trim().min(3).max(140),
-  description: z.string().trim().min(3).max(10_000),
-  category: z.string().trim().min(2).max(80),
-  condition: z.string().trim().min(2).max(80),
-  commune: z.string().trim().min(2).max(100),
-  delivery: z.string().trim().min(2).max(160),
-  endsAt: z.string().trim().min(1),
+  title: cleanText(3, 140, 'El título'),
+  description: z
+    .string({ required_error: 'Debes indicar la descripción.' })
+    .transform(stripMarkupMultiline)
+    .refine((value) => value.length >= 3, {
+      message: 'La descripción debe tener al menos 3 caracteres.',
+    })
+    .refine((value) => value.length <= 10_000, {
+      message: 'La descripción no puede superar los 10.000 caracteres.',
+    }),
+  category: z.enum(CATEGORIES, {
+    errorMap: () => ({ message: `La categoría debe ser una de: ${CATEGORIES.join(', ')}.` }),
+  }),
+  condition: z.enum(CONDITIONS, {
+    errorMap: () => ({ message: `El estado debe ser uno de: ${CONDITIONS.join(', ')}.` }),
+  }),
+  commune: cleanText(2, 100, 'La comuna'),
+  delivery: cleanText(2, 160, 'La coordinación de entrega'),
+  endsAt: z
+    .string({ required_error: 'Debes indicar la fecha de cierre.' })
+    .trim()
+    .min(1, 'Debes indicar la fecha de cierre.'),
 };
 
 const createSchema = z
   .object({
     ...auctionFields,
-    startingPrice: z.number().int().positive().max(MAX_MONEY),
+    startingPrice: moneySchema('El precio inicial'),
   })
   .strict();
 
@@ -41,9 +71,7 @@ const updateSchema = z
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Debes enviar al menos un cambio.');
 
-const bidSchema = z
-  .object({ amount: z.number().int().positive().max(MAX_MONEY) })
-  .strict();
+const bidSchema = z.object({ amount: moneySchema('La puja') }).strict();
 
 const listSchema = z.object({
   status: z.enum(['ACTIVE', 'MATCHING', 'SOLD', 'NO_MATCH']).optional(),
@@ -115,7 +143,7 @@ router.get(
     await synchronizeAuction(request.params.id);
     const [auction, bids] = await Promise.all([
       getAuctionById(request.params.id, request.user),
-      getPublicBids(request.params.id),
+      getPublicBids(request.params.id, request.user),
     ]);
     response.json({ data: { auction: { ...auction, bids } } });
   }),
@@ -139,6 +167,22 @@ router.patch(
       const auction = await advanceAuctionLocked(client, result.rows[0], now);
       if (auction.status !== 'ACTIVE') {
         return { closed: true };
+      }
+
+      // Once real money is committed the closing time is frozen. Moving it in either
+      // direction abuses the bidders: bringing it forward cuts the auction short while
+      // a high bid is live, pushing it back keeps their funds frozen indefinitely.
+      if (input.endsAt) {
+        const liveBids = await client.query(
+          `SELECT 1 FROM bids WHERE auction_id = $1 AND status = 'ACTIVE' LIMIT 1`,
+          [auction.id],
+        );
+        const sameInstant =
+          requireAtLeastThreeMinutesAhead(input.endsAt, DateTime.fromJSDate(now)).toMillis() ===
+          new Date(auction.closes_at).getTime();
+        if (liveBids.rowCount > 0 && !sameInstant) {
+          return { frozen: true };
+        }
       }
 
       const closesAt = input.endsAt
@@ -171,6 +215,12 @@ router.patch(
       return { closed: false };
     });
 
+    if (outcome.frozen) {
+      throw conflict(
+        'CLOSING_TIME_LOCKED',
+        'La fecha de cierre queda fija cuando la subasta ya tiene pujas activas.',
+      );
+    }
     if (outcome.closed) {
       throw conflict('AUCTION_ALREADY_CLOSED', 'Una subasta cerrada ya no se puede editar.');
     }
@@ -207,12 +257,17 @@ router.post(
          WHERE auction_id = $1 AND status = 'ACTIVE'`,
         [auction.id],
       );
+      const hasBids = highestResult.rows[0].highest != null;
       const currentPrice = highestResult.rows[0].highest ?? auction.starting_price;
-      if (amount <= currentPrice) {
+      // A minimum step keeps a closing auction from turning into a war of $1 raises.
+      const requiredAmount = minimumNextBid(currentPrice, hasBids);
+      if (amount < requiredAmount) {
         throw conflict(
           'BID_TOO_LOW',
-          `La puja debe ser mayor al precio actual de $${currentPrice}.`,
-          { currentPrice },
+          hasBids
+            ? `La puja debe ser de al menos $${requiredAmount} (incremento mínimo $${minimumIncrement(currentPrice)}).`
+            : `La puja debe ser de al menos $${requiredAmount}.`,
+          { currentPrice, minimumBid: requiredAmount, minimumIncrement: minimumIncrement(currentPrice) },
         );
       }
 
@@ -281,6 +336,18 @@ router.post(
             : 'Fondos congelados al crear una puja',
         ],
       );
+
+      // Anti-sniping: a bid inside the final window pushes the close out, so the
+      // previous leader always gets a chance to answer. Re-arms on every late bid.
+      const remainingMs = new Date(auction.closes_at).getTime() - now.getTime();
+      if (remainingMs <= ANTI_SNIPE_WINDOW_MS) {
+        await client.query(
+          `UPDATE auctions
+           SET closes_at = $2::timestamptz, updated_at = $3
+           WHERE id = $1`,
+          [auction.id, new Date(now.getTime() + ANTI_SNIPE_WINDOW_MS), now],
+        );
+      }
       return { closed: false };
     });
 
@@ -290,7 +357,7 @@ router.post(
 
     const [auction, bids] = await Promise.all([
       getAuctionById(request.params.id, request.user),
-      getPublicBids(request.params.id),
+      getPublicBids(request.params.id, request.user),
     ]);
     response.status(201).json({ data: { auction: { ...auction, bids } } });
   }),
@@ -358,7 +425,7 @@ router.delete(
 
     const [auction, bids] = await Promise.all([
       getAuctionById(request.params.id, request.user),
-      getPublicBids(request.params.id),
+      getPublicBids(request.params.id, request.user),
     ]);
     response.json({ data: { auction: { ...auction, bids } } });
   }),

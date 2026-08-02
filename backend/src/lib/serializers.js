@@ -1,3 +1,6 @@
+import { publicAlias } from './privacy.js';
+
+// The authenticated user's own record: email and role are theirs to see.
 export const serializeUser = (row) => ({
   id: row.id,
   email: row.email,
@@ -6,9 +9,12 @@ export const serializeUser = (row) => ({
   salesCount: row.sales_count,
 });
 
+// Public profile: no email address. This endpoint needs no authentication, so anything
+// here is world-readable — an address would be both personal data and a way to take the
+// deal off-platform.
 export const serializePublicUser = (row) => ({
   id: row.id,
-  email: row.email,
+  alias: publicAlias(row.id),
   createdAt: row.created_at,
   salesCount: row.sales_count,
 });

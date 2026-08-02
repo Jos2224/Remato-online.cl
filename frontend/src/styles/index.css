@@ -569,9 +569,14 @@ textarea:focus-visible {
   background: currentColor;
 }
 
-.status-badge--active,
-.status-badge--sold {
+/* Every state gets its own colour. "Activa" and "Vendida" previously shared the same
+   green, which made a live auction indistinguishable from a closed one in the archive. */
+.status-badge--active {
   color: var(--green);
+}
+
+.status-badge--sold {
+  color: #2f6fd0;
 }
 
 .status-badge--matching {
@@ -580,6 +585,21 @@ textarea:focus-visible {
 
 .status-badge--dead {
   color: #77736c;
+}
+
+/* The dot alone is not enough for colour-blind users, so each state also gets a shape. */
+.status-badge--sold::before {
+  border-radius: 2px;
+}
+
+.status-badge--matching::before {
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 35%, transparent);
+}
+
+.status-badge--dead::before {
+  border-radius: 0;
+  transform: rotate(45deg);
 }
 
 .auction-card__content {

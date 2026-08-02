@@ -19,6 +19,29 @@ export function storeToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+// Global handling for an expired or revoked session.
+//
+// Previously a 401 was only acted on during start-up, so once a token expired mid-session
+// the user kept seeing a logged-in shell while every request failed. Any 401 now clears
+// the stored token and notifies the app so it can send the user to the login screen.
+const unauthorizedListeners = new Set();
+
+export function onUnauthorized(listener) {
+  unauthorizedListeners.add(listener);
+  return () => unauthorizedListeners.delete(listener);
+}
+
+function handleUnauthorized() {
+  storeToken(null);
+  for (const listener of unauthorizedListeners) {
+    try {
+      listener();
+    } catch {
+      /* a broken listener must not mask the original request error */
+    }
+  }
+}
+
 async function request(path, options = {}) {
   const { body, token = getStoredToken(), headers, ...fetchOptions } = options;
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -36,10 +59,19 @@ async function request(path, options = {}) {
   const payload = response.status === 204 ? null : isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
+    // Only a genuine session failure logs out. A 401 from the login endpoint itself just
+    // means "wrong password" and must not wipe an unrelated session.
+    if (response.status === 401 && token && !path.startsWith("/auth/login") && !path.startsWith("/auth/register")) {
+      handleUnauthorized();
+    }
     const message =
       payload?.message || payload?.error?.message || (typeof payload?.error === "string" && payload.error) ||
       (typeof payload === "string" && payload) || "No pudimos completar la solicitud.";
-    throw new ApiError(message, response.status, payload?.details || payload?.errors || null);
+    throw new ApiError(
+      message,
+      response.status,
+      payload?.error?.details || payload?.details || payload?.errors || null,
+    );
   }
 
   return payload;
@@ -60,12 +92,18 @@ function asNumber(...values) {
   return Number.isFinite(number) ? number : 0;
 }
 
+// The public API returns an alias instead of an email for everyone except the viewer
+// themselves, so every screen renders `displayName` and never assumes an address exists.
 export function normalizeUser(raw = {}) {
   const user = raw.user ?? raw;
+  const email = user.email ?? "";
+  const alias = user.alias ?? "";
   return {
     ...user,
     id: String(user.id ?? user._id ?? ""),
-    email: user.email ?? "",
+    email,
+    alias,
+    displayName: email || alias || "Cuenta no disponible",
     role: String(user.role ?? "user").toLowerCase(),
     createdAt: user.createdAt ?? user.created_at ?? null,
     salesCount: asNumber(user.salesCount, user.sales, user.completedSales),
@@ -75,10 +113,15 @@ export function normalizeUser(raw = {}) {
 export function normalizeBid(raw = {}) {
   const bidder = raw.bidder ?? raw.user ?? {};
   const status = String(raw.status ?? "active").toLowerCase();
+  const email = raw.email ?? raw.bidderEmail ?? bidder.email ?? "";
+  const alias = bidder.alias ?? raw.bidderAlias ?? "";
   return {
     ...raw,
     id: String(raw.id ?? raw._id ?? ""),
-    email: raw.email ?? raw.bidderEmail ?? bidder.email ?? "Cuenta eliminada",
+    email,
+    alias,
+    isMine: Boolean(bidder.isMe ?? raw.isMine),
+    displayName: (bidder.isMe ? "Tu puja" : "") || email || alias || "Cuenta no disponible",
     userId: String(raw.userId ?? raw.bidderId ?? bidder.id ?? ""),
     amount: asNumber(raw.amount, raw.monto, raw.value),
     createdAt: raw.createdAt ?? raw.placedAt ?? raw.fecha ?? null,
@@ -131,12 +174,14 @@ export function normalizeAuction(raw = {}) {
     endsAt,
     createdAt: raw.createdAt ?? null,
     updatedAt: raw.updatedAt ?? null,
-    seller: normalizeUser({ ...seller, email: seller.email ?? raw.sellerEmail ?? "" }),
+    seller: normalizeUser({ ...seller, email: seller.email ?? raw.sellerEmail ?? "", alias: seller.alias ?? "" }),
     sellerId: String(raw.sellerId ?? raw.creatorId ?? seller.id ?? seller._id ?? ""),
     bids,
     bidCount: asNumber(raw.bidCount, raw.bidsCount, bids.length),
     status: normalizeStatus(raw.status, endsAt),
     winningEmail: raw.winningEmail ?? raw.winningBidderEmail ?? raw.buyer?.email ?? raw.winner?.email ?? null,
+    winningAlias: raw.winningBidderAlias ?? null,
+    winningBidderId: raw.winningBidderId ?? null,
     canEdit: raw.canEdit == null ? null : Boolean(raw.canEdit),
     myBid,
     capabilities: raw.capabilities ?? { canBid: Boolean(raw.canBid), canEdit: Boolean(raw.canEdit) },
@@ -226,10 +271,25 @@ export const usersApi = {
 };
 
 export const auctionsApi = {
+  // Kept returning a bare array so existing callers are unaffected; use listPaged when
+  // the total count matters.
   async list(params) {
-    const payload = unwrap(await request(`/auctions${queryString({ limit: 100, ...params })}`), ["auctions", "items", "results"]);
-    const items = Array.isArray(payload) ? payload : payload?.items ?? [];
-    return items.map(normalizeAuction);
+    return (await auctionsApi.listPaged(params)).items;
+  },
+  // Server-side pagination: the API already reports the true total, so the UI no longer
+  // has to guess from the length of a truncated page.
+  async listPaged(params = {}) {
+    const raw = await request(`/auctions${queryString({ limit: 30, ...params })}`);
+    const data = raw?.data ?? raw ?? {};
+    const source = Array.isArray(data) ? data : data.auctions ?? data.items ?? data.results ?? [];
+    const pagination = data.pagination ?? {};
+    const items = (Array.isArray(source) ? source : []).map(normalizeAuction);
+    return {
+      items,
+      total: asNumber(pagination.total, items.length),
+      limit: asNumber(pagination.limit, params.limit ?? 30),
+      offset: asNumber(pagination.offset, params.offset ?? 0),
+    };
   },
   async get(id) {
     return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}`), ["auction"]));

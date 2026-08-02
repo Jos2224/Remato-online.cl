@@ -13,7 +13,7 @@ export function MyAuctionsPage() {
     { interval: 12_000 },
   );
   const mine = (data || []).filter(
-    (auction) => auction.canEdit || auction.capabilities?.canEdit || auction.sellerId === user?.id || auction.seller.email?.toLowerCase() === user?.email?.toLowerCase(),
+    (auction) => auction.canEdit || auction.capabilities?.canEdit || auction.sellerId === user?.id,
   );
   const active = mine.filter((auction) => auction.status === "active");
   const ended = mine.filter((auction) => auction.status !== "active");

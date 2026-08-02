@@ -314,6 +314,13 @@ async function settleAcceptedMatch(client, auction, match, at) {
   await releaseOtherBids(client, auction.id, losingBids, at);
 }
 
+// A one-hour turn has to be measured from the moment the candidate can actually see it.
+// Deriving it from a timestamp already in the past (closes_at, or the previous turn's
+// expiry after a long idle period) creates a turn that is born expired and penalises a
+// bidder who never had the chance to respond.
+const turnOpensAt = (scheduled, now) =>
+  new Date(Math.max(new Date(scheduled).getTime(), now.getTime()));
+
 export async function advanceAuctionLocked(client, auction, now = new Date()) {
   let current = auction;
 
@@ -326,7 +333,7 @@ export async function advanceAuctionLocked(client, auction, now = new Date()) {
       [current.id, now],
     );
     current = updated.rows[0];
-    await startNextMatch(client, current.id, current.closes_at);
+    await startNextMatch(client, current.id, turnOpensAt(current.closes_at, now));
   }
 
   // One lazy sync can catch up several one-hour turns after a long idle period.
@@ -350,7 +357,7 @@ export async function advanceAuctionLocked(client, auction, now = new Date()) {
     if (new Date(pending.expires_at) > now) break;
 
     await penalizeMatch(client, pending, 'EXPIRED', pending.expires_at);
-    await startNextMatch(client, current.id, pending.expires_at);
+    await startNextMatch(client, current.id, turnOpensAt(pending.expires_at, now));
     const refreshed = await client.query('SELECT * FROM auctions WHERE id = $1', [current.id]);
     current = refreshed.rows[0];
   }

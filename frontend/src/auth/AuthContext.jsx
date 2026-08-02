@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { authApi, getStoredToken, storeToken } from "../api/client";
+import { authApi, getStoredToken, onUnauthorized, storeToken } from "../api/client";
 
 const AuthContext = createContext(null);
 
@@ -40,6 +40,10 @@ export function AuthProvider({ children }) {
     }
     refreshUser().catch(() => {});
   }, [refreshUser, token]);
+
+  // A token can expire or be revoked at any point, not only during start-up. Without
+  // this the shell kept showing a signed-in user while every request failed with 401.
+  useEffect(() => onUnauthorized(() => clearSession()), [clearSession]);
 
   const establishSession = useCallback((session) => {
     if (!session.token) throw new Error("El servidor no entregó una sesión válida.");

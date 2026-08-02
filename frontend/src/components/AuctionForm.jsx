@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { chileInputToIso, formatMoney, minimumChileInput, numberFromInput, toChileInputValue } from "../utils/format";
+import { chileInputToIso, describeApiError, formatMoney, minimumChileInput, numberFromInput, toChileInputValue } from "../utils/format";
 import { serverNowMs } from "../utils/server-clock";
 import { InlineNotice, Spinner } from "./States";
 
@@ -82,7 +82,7 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
       commune: form.commune.trim(),
       delivery: form.delivery.trim(),
       endsAt,
-    }).catch((submitError) => setError(submitError.message));
+    }).catch((submitError) => setError(describeApiError(submitError)));
   };
 
   return (
@@ -148,13 +148,13 @@ export function AuctionForm({ auction, onSubmit, submitting }) {
         <label htmlFor="endsAt">Fecha y hora exacta de cierre</label>
         <input id="endsAt" name="endsAt" type="datetime-local" min={minimum} value={form.endsAt} onChange={update} required />
         <small>
-          Hora de Chile (America/Santiago). Debe quedar a 3 minutos o más desde este momento y no tiene duración máxima.
+          Hora de Chile (America/Santiago). Debe quedar entre 3 minutos y 30 días desde este momento.
         </small>
       </div>
 
       <div className="auction-form__rules field--wide">
         <strong>Antes de {editing ? "guardar" : "publicar"}</strong>
-        <p>La subasta se cierra exactamente a la hora indicada. Cada puja es un compromiso de compra y deja ese dinero congelado.</p>
+        <p>La subasta se cierra a la hora indicada; una puja en los últimos 2 minutos la prorroga otros 2. Cada puja es un compromiso de compra y deja ese dinero congelado. Una vez que haya pujas, la fecha de cierre queda fija.</p>
       </div>
 
       <div className="auction-form__actions field--wide">

@@ -18,7 +18,7 @@ export function EditAuctionPage() {
   if (loading) return <PageLoader label="Cargando la publicación" />;
   if (error || !auction) return <div className="container page-space"><ErrorState title="No pudimos abrir esta publicación" error={error} onRetry={reload} /></div>;
 
-  const isOwner = auction.sellerId === user?.id || auction.seller.email?.toLowerCase() === user?.email?.toLowerCase();
+  const isOwner = auction.sellerId === user?.id;
   const canEdit = auction.canEdit ?? auction.capabilities?.canEdit ?? isOwner;
   if (!canEdit) {
     return <div className="container page-space"><ErrorState title="Esta publicación no es tuya" error={{ message: "Solo la cuenta vendedora puede editarla." }} /></div>;

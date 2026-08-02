@@ -5,17 +5,17 @@ import { Countdown } from "../components/Countdown";
 import { DashboardNav } from "../components/DashboardNav";
 import { EmptyState, ErrorState, PageLoader } from "../components/States";
 import { StatusBadge } from "../components/StatusBadge";
-import { usePollingQuery } from "../hooks/usePollingQuery";
+import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
 import { formatMoney } from "../utils/format";
 
 export function MyBidsPage() {
   const { user } = useAuth();
   const { data, loading, error, reload } = usePollingQuery(
     () => auctionsApi.list({ participating: true, limit: 100 }),
-    { interval: 10_000 },
+    { interval: (current) => urgencyInterval((current ?? []).map((item) => item?.endsAt), 10_000) },
   );
   const participating = (data || []).map((auction) => {
-    const myBid = auction.myBid || auction.bids.find((bid) => bid.active !== false && bid.email?.toLowerCase() === user?.email?.toLowerCase());
+    const myBid = auction.myBid || auction.bids.find((bid) => bid.active !== false && (bid.isMine || (user?.id && bid.userId === user.id)));
     return { auction, myBid };
   }).filter(({ myBid }) => Boolean(myBid));
 
