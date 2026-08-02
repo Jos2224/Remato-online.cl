@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { pool } from '../db/pool.js';
 import { withTransaction } from '../db/transaction.js';
-import { conflict, notFound } from '../lib/api-error.js';
+import { badRequest, conflict, notFound } from '../lib/api-error.js';
 import { MAX_MONEY } from '../domain/money.js';
 import {
+  FLOW_INVALID_EMAIL,
   FLOW_STATUS,
   createPayment,
   describeFlowStatus,
@@ -13,9 +14,17 @@ import {
 // Identificador propio de la orden. Corto, único y sin datos personales.
 const newCommerceOrder = () => `RO-${randomUUID().replace(/-/g, '').slice(0, 18).toUpperCase()}`;
 
-export async function startDeposit({ user, amount }) {
+export async function startDeposit({ user, amount, payerEmail }) {
   if (!Number.isSafeInteger(amount) || amount <= 0 || amount > MAX_MONEY) {
     throw conflict('INVALID_AMOUNT', 'El monto debe ser un entero positivo de pesos.');
+  }
+
+  // Flow exige un correo y además valida que el dominio exista y sea entregable, así
+  // que rechaza direcciones perfectamente bien formadas. El correo de la cuenta es sólo
+  // el valor por defecto: si la pasarela lo rechaza, se puede pagar indicando otro.
+  const email = (payerEmail ?? user.email ?? '').trim().toLowerCase();
+  if (!email) {
+    throw conflict('PAYER_EMAIL_REQUIRED', 'Indica un correo para el pago.');
   }
 
   const commerceOrder = newCommerceOrder();
@@ -32,7 +41,7 @@ export async function startDeposit({ user, amount }) {
       commerceOrder,
       subject: 'Abono de saldo en RematoOnline',
       amount,
-      email: user.email,
+      email,
       optional: { userId: user.id },
     });
   } catch (error) {
@@ -42,6 +51,15 @@ export async function startDeposit({ user, amount }) {
       `UPDATE payments SET status = 'CANCELLED', updated_at = now() WHERE id = $1`,
       [inserted.rows[0].id],
     );
+    // 1620 es "correo no válido" según Flow. Decirle a la persona "no pudimos iniciar el
+    // pago" la deja sin saber qué corregir, cuando el arreglo está a su alcance.
+    if (Number(error?.code) === FLOW_INVALID_EMAIL) {
+      throw badRequest(
+        'PAYER_EMAIL_INVALID',
+        `La pasarela no acepta el correo ${email}. Indica otro correo para el pago.`,
+        { payerEmail: email },
+      );
+    }
     throw error;
   }
 

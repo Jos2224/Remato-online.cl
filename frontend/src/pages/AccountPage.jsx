@@ -37,6 +37,10 @@ export function AccountPage() {
   // Con pasarela configurada el abono se hace con tarjeta; sin ella queda el abono
   // simulado de desarrollo.
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  // Flow valida el dominio del correo y rechaza direcciones bien formadas. Cuando eso
+  // pasa se ofrece indicar otro correo sólo para el pago, sin tocar el de la cuenta.
+  const [payerEmail, setPayerEmail] = useState("");
+  const [needsPayerEmail, setNeedsPayerEmail] = useState(false);
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [actionError, setActionError] = useState("");
   const [busyAction, setBusyAction] = useState("");
@@ -99,7 +103,7 @@ export function AccountPage() {
         if (gatewayEnabled) {
           // Se sale del sitio hacia la pasarela. Al volver, el saldo ya estará
           // acreditado por la confirmación servidor a servidor.
-          const started = await paymentsApi.startDeposit(amount);
+          const started = await paymentsApi.startDeposit(amount, payerEmail || undefined);
           window.location.assign(started.redirectUrl);
           return;
         }
@@ -110,6 +114,11 @@ export function AccountPage() {
       await reload();
       showToast(type === "deposit" ? `Agregaste ${formatMoney(amount)} a tu saldo.` : `Retiraste ${formatMoney(amount)} de tu saldo.`);
     } catch (nextError) {
+      // La pasarela rechazó el correo: se ofrece indicar otro en vez de
+      // dejar a la persona con un error sin salida.
+      if (nextError?.details?.payerEmail || /correo/i.test(nextError?.message ?? "")) {
+        setNeedsPayerEmail(true);
+      }
       setActionError(nextError.message);
     } finally {
       setBusyAction("");
@@ -158,6 +167,22 @@ export function AccountPage() {
             <div className="money-action__form">
               <div className="money-input"><span>$</span><input aria-label="Monto a incrementar" inputMode="numeric" value={depositAmount} onChange={(event) => setDepositAmount(event.target.value)} placeholder="100000" /></div>
               {gatewayEnabled && <FlowBadge compact />}
+              {needsPayerEmail && (
+                <div className="field field--wide">
+                  <label htmlFor="payerEmail">Correo para el pago</label>
+                  <input
+                    id="payerEmail"
+                    type="email"
+                    value={payerEmail}
+                    onChange={(event) => setPayerEmail(event.target.value)}
+                    placeholder="tucorreo@gmail.com"
+                  />
+                  <small className="field-note">
+                    La pasarela no aceptó el correo de tu cuenta. Indica otro sólo para este
+                    pago; el de tu cuenta no cambia.
+                  </small>
+                </div>
+              )}
               <button className="button button--dark" type="button" disabled={Boolean(busyAction)} onClick={() => moveMoney("deposit")}>
                 {busyAction === "deposit" && <Spinner small />} {gatewayEnabled ? "Pagar con tarjeta" : "Agregar"}
               </button>

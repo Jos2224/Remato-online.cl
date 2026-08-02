@@ -99,6 +99,10 @@ export async function flowGet(endpoint, parameters) {
   return ensureOk(response, await readResponse(response), endpoint);
 }
 
+// Flow valida que el dominio del correo exista y sea entregable, así que rechaza
+// direcciones sintácticamente correctas. Este es el código con que lo informa.
+export const FLOW_INVALID_EMAIL = 1620;
+
 // Estados de Flow. 2 es el único que significa "el dinero llegó".
 export const FLOW_STATUS = Object.freeze({
   PENDING: 1,

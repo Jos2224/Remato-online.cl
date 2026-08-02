@@ -22,8 +22,24 @@ router.post(
   requireAuth,
   asyncHandler(async (request, response) => {
     requireFlow();
-    const { amount } = validate(z.object({ amount: moneySchema('El monto') }), request.body);
-    const started = await startDeposit({ user: request.user, amount });
+    const input = validate(
+      z.object({
+        amount: moneySchema('El monto'),
+        // Opcional: sólo se usa cuando la pasarela rechaza el correo de la cuenta.
+        payerEmail: z
+          .string()
+          .trim()
+          .email('Ingresa un correo electrónico válido para el pago.')
+          .max(320)
+          .optional(),
+      }),
+      request.body,
+    );
+    const started = await startDeposit({
+      user: request.user,
+      amount: input.amount,
+      payerEmail: input.payerEmail,
+    });
     response.status(201).json({ data: started });
   }),
 );
