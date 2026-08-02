@@ -1,0 +1,31 @@
+# Dependencias
+node_modules/
+
+# Builds y cobertura
+dist/
+build/
+coverage/
+.vite/
+
+# Configuración local y secretos
+.env
+.env.*
+!.env.example
+
+# Logs y procesos
+*.log
+npm-debug.log*
+*.pid
+
+# Bases de datos locales y archivos temporales
+*.db
+*.db-journal
+tmp/
+.tmp/
+
+# Editores y sistema operativo
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

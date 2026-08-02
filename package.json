@@ -1,0 +1,26 @@
+{
+  "name": "rematoonline",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketplace de subastas entre particulares",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail --names backend,frontend \"npm run dev --workspace backend\" \"npm run dev --workspace frontend\"",
+    "dev:backend": "npm run dev --workspace backend",
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "migrate": "npm run migrate --workspace backend",
+    "seed": "npm run seed --workspace backend",
+    "seed:demo": "npm run seed:demo --workspace backend"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

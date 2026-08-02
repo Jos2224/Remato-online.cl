@@ -1,0 +1,29 @@
+{
+  "name": "rematoonline-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test",
+    "migrate": "node src/scripts/migrate.js",
+    "seed": "node src/scripts/seed.js",
+    "seed:demo": "node src/scripts/seed-demo.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.7.2",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  }
+}
