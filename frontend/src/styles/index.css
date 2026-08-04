@@ -1942,9 +1942,18 @@ tbody tr:last-child td {
     display: block;
   }
 
+  /* `1fr` por sí solo equivale a `minmax(auto, 1fr)`: el suelo de la columna es
+     el ancho mínimo del contenido, así que la ficha y el panel de pujas se
+     salían 14px por el costado en un teléfono. Con el mínimo en cero mandan los
+     360px reales de la pantalla. */
   .auction-detail__grid,
-.form-page__layout {
-    grid-template-columns: 1fr;
+  .form-page__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auction-detail__grid > *,
+  .form-page__layout > * {
+    min-width: 0;
   }
 
   .section-heading {
@@ -2546,9 +2555,19 @@ textarea:disabled {
     linear-gradient(135deg, #151514, #262521);
 }
 
+/* La columna se declara con mínimo cero y las piezas pueden encogerse.
+   Sin esto, una rejilla toma como suelo el ancho mínimo de su contenido: la
+   fila de categorías mide 841px sin partirse y estiraba la banda entera hasta
+   ese ancho, así que en un teléfono la portada salía al doble del ancho de la
+   pantalla y sólo se veía la mitad izquierda. */
 .browse-hero__inner {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
+}
+
+.browse-hero__inner > * {
+  min-width: 0;
 }
 
 .browse-hero__lead h1 {
@@ -2571,6 +2590,7 @@ textarea:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  min-width: 0;
 }
 
 .browse-hero__categories {
@@ -2580,6 +2600,10 @@ textarea:disabled {
   flex-wrap: wrap;
   gap: 8px;
   list-style: none;
+  /* En columna, el `overflow-x: auto` de pantalla estrecha no basta por sí solo
+     para que esta fila se deje encoger; sin el mínimo en cero no se desliza,
+     empuja. */
+  min-width: 0;
 }
 
 /* Foco visible sobre el fondo oscuro: el anillo rojo se pierde ahí. */

@@ -238,7 +238,10 @@ export function HomePage() {
         <section className="browse__results" aria-live="polite">
           <div className="results-bar">
             <p className="results-bar__count">
-              {total === 0 ? (
+              {/* Mientras no hay datos no se puede afirmar que no haya nada: en la
+                  primera carga esto anunciaba "Sin resultados" justo encima del
+                  cargador, y quien llegaba leía que el sitio estaba vacío. */}
+              {!data ? null : total === 0 ? (
                 "Sin resultados"
               ) : (
                 <>
