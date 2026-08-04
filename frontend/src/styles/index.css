@@ -35,6 +35,11 @@ body {
   color: var(--ink);
   background: var(--paper);
   line-height: 1.55;
+  /* Una palabra sin espacios no se parte sola y arrastra la página entera a lo
+     ancho: bastaba un correo largo en la cabecera de "Mi cuenta", el título de
+     una subasta con un código de producto o una dirección pegada para que en el
+     teléfono se viera media pantalla. Sólo actúa cuando la palabra no cabe. */
+  overflow-wrap: break-word;
 }
 
 button,
@@ -765,7 +770,7 @@ textarea:focus-visible {
   padding-top: 17px;
   border-top: 1px solid var(--line);
   display: grid;
-  grid-template-columns: 1fr 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 18px;
 }
 
@@ -822,7 +827,7 @@ textarea:focus-visible {
 
 .steps {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   border-block: 1px solid var(--line-dark);
 }
 
@@ -1027,7 +1032,7 @@ textarea:focus-visible {
 
 .detail-facts {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px 48px;
 }
 
@@ -1523,7 +1528,7 @@ tbody tr:last-child td {
 
 .balance-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1575,7 +1580,7 @@ tbody tr:last-child td {
 .money-actions {
   margin-block: 20px 48px;
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1597,7 +1602,7 @@ tbody tr:last-child td {
 
 .money-action__form {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -1681,7 +1686,7 @@ tbody tr:last-child td {
   margin-bottom: 46px;
   border: 1px solid var(--line-dark);
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   background: var(--white);
 }
 
@@ -1874,7 +1879,7 @@ tbody tr:last-child td {
   }
 
   .auction-card__content {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auction-card__price {
@@ -1962,11 +1967,11 @@ tbody tr:last-child td {
   }
 
   .auction-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .steps {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .steps article {
@@ -1992,7 +1997,7 @@ tbody tr:last-child td {
   }
 
   .auth-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auth-page__aside {
@@ -2000,7 +2005,7 @@ tbody tr:last-child td {
   }
 
   .balance-grid {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .balance-card--primary {
@@ -2008,11 +2013,11 @@ tbody tr:last-child td {
   }
 
   .money-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bid-list__item {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .bid-list__status,
@@ -2025,7 +2030,7 @@ tbody tr:last-child td {
   }
 
   .match-card {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .match-card__timer,
@@ -2065,7 +2070,7 @@ tbody tr:last-child td {
   }
 
   .auction-card__meta {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .auction-card__timer {
@@ -2082,7 +2087,7 @@ tbody tr:last-child td {
   .balance-grid,
   .rule-banner,
   .match-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bid-panel {
@@ -2091,7 +2096,7 @@ tbody tr:last-child td {
 
   .auction-form {
     padding: 22px 18px;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auction-form > *,
@@ -2121,7 +2126,7 @@ tbody tr:last-child td {
   }
 
   .money-action__form {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-nav {
@@ -2129,7 +2134,7 @@ tbody tr:last-child td {
   }
 
   .bid-list__item {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bid-list__status,

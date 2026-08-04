@@ -216,11 +216,8 @@ export function HomePage() {
                 </li>
               ))}
             </ul>
-            {canTrade && (
-              <Link className="button button--light button--small" to={isAuthenticated ? "/publicar" : "/registro"}>
-                Publicar un producto
-              </Link>
-            )}
+            {/* El botón "Publicar un producto" que iba aquí repetía el "Publicar"
+                de la cabecera, visible en la misma pantalla. Queda sólo aquél. */}
           </div>
         </div>
       </section>
