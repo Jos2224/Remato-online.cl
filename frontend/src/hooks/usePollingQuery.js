@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+// Gana la última petición pedida, no la última en llegar.
+//
+// Cada llamada a `begin()` se apunta como la vigente y devuelve la forma de preguntar si
+// todavía lo es. Sin esto, escribir en el buscador deja en pantalla el resultado de una
+// palabra anterior cada vez que una respuesta lenta adelanta a una rápida.
+export function createRunGuard() {
+  let current = 0;
+  return () => {
+    const mine = (current += 1);
+    return () => mine === current;
+  };
+}
+
 // `interval` may be a number or a function of the latest result. A function lets a
 // screen poll faster exactly when it matters — the final minute before an auction
 // closes, where a 12 second refresh hides the price movement completely — without
@@ -11,27 +24,41 @@ export function usePollingQuery(fetcher, { interval = 12_000, enabled = true, de
   const [error, setError] = useState(null);
   const mounted = useRef(true);
   const latest = useRef(null);
+  const beginRun = useRef(null);
+  if (beginRun.current === null) beginRun.current = createRunGuard();
   const intervalRef = useRef(interval);
   intervalRef.current = interval;
+
+  // `mounted` sólo distingue montado de desmontado. Antes se apagaba también al cambiar
+  // las dependencias, y como el efecto siguiente lo volvía a encender de inmediato, la
+  // respuesta de la petición vieja se encontraba la bandera en verde y pisaba a la nueva.
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const load = useCallback(
     async ({ quiet = false } = {}) => {
       if (!enabled) return null;
+      const isMine = beginRun.current();
+      const isCurrent = () => mounted.current && isMine();
       if (quiet) setRefreshing(true);
       else setLoading(true);
       try {
         const result = await fetcher();
-        if (mounted.current) {
+        if (isCurrent()) {
           latest.current = result;
           setData(result);
           setError(null);
         }
         return result;
       } catch (nextError) {
-        if (mounted.current) setError(nextError);
+        if (isCurrent()) setError(nextError);
         return null;
       } finally {
-        if (mounted.current) {
+        if (isCurrent()) {
           setLoading(false);
           setRefreshing(false);
         }
@@ -43,12 +70,15 @@ export function usePollingQuery(fetcher, { interval = 12_000, enabled = true, de
   );
 
   useEffect(() => {
-    mounted.current = true;
     if (!enabled) {
       setLoading(false);
       return undefined;
     }
 
+    // Bandera propia de esta ejecución del efecto. La anterior queda en `true` para
+    // siempre, así que su cadena de sondeo muere aunque su petición termine más tarde;
+    // antes cada cambio de filtro dejaba viva una cadena más, todas escribiendo encima.
+    let cancelled = false;
     let timer = null;
     const resolveDelay = () => {
       const source = intervalRef.current;
@@ -59,20 +89,22 @@ export function usePollingQuery(fetcher, { interval = 12_000, enabled = true, de
     // A self-rescheduling timeout rather than setInterval: the delay is recomputed after
     // every response, and a slow response can never queue up overlapping requests.
     const schedule = () => {
+      if (cancelled) return;
       const delay = resolveDelay();
       if (delay == null) return;
       timer = window.setTimeout(async () => {
+        if (cancelled) return;
         await load({ quiet: true });
-        if (mounted.current) schedule();
+        schedule();
       }, delay);
     };
 
     load().then(() => {
-      if (mounted.current) schedule();
+      if (!cancelled) schedule();
     });
 
     return () => {
-      mounted.current = false;
+      cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
   }, [enabled, load]);

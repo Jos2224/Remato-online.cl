@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { auctionsApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -81,6 +81,10 @@ export function HomePage() {
       // Cambiar un filtro estando en la página 4 dejaba una lista vacía sin explicación:
       // cualquier cambio que no sea de paginación vuelve al principio.
       if (!keepPage) next.delete("page");
+      // Volver a enviar la misma búsqueda no cambia nada, pero sí apilaba una entrada más
+      // en el historial: había que pulsar "atrás" tantas veces como veces se hubiera
+      // pulsado Enter para salir de la página.
+      if (next.toString() === params.toString()) return;
       setParams(next);
     },
     [params, setParams],
@@ -131,6 +135,15 @@ export function HomePage() {
   const firstShown = total === 0 ? 0 : offset + 1;
   const lastShown = Math.min(offset + auctions.length, total);
 
+  // Una página que se quedó sin resultados —un enlace compartido con `page=9`, o subastas
+  // que cerraron mientras se miraba— se corrige sola. Sin esto la lista queda vacía y
+  // parece que no hay nada publicado, cuando lo que sobra es el número de página.
+  useEffect(() => {
+    if (data && total > 0 && filters.page > pages) {
+      update({ page: pages > 1 ? pages : null }, { keepPage: true });
+    }
+  }, [data, total, pages, filters.page, update]);
+
   // Las marcas puestas a mano, para poder contarlas y quitarlas de una en una. El estado
   // por defecto no cuenta: nadie lo eligió.
   const chips = useMemo(() => {
@@ -156,15 +169,20 @@ export function HomePage() {
     else toggle(chip.key, chip.value);
   };
 
-  const clearAll = () =>
-    update({
-      status: null,
-      category: null,
-      condition: null,
-      shippingMethod: null,
-      priceMin: null,
-      priceMax: null,
-    });
+  const EMPTY_FILTERS = {
+    status: null,
+    category: null,
+    condition: null,
+    shippingMethod: null,
+    priceMin: null,
+    priceMax: null,
+  };
+
+  const clearAll = () => update(EMPTY_FILTERS);
+  // El botón de la pantalla vacía borra también el texto buscado. Cuando lo único puesto
+  // era la búsqueda, "Limpiar los filtros" no quitaba nada y la pantalla se quedaba igual:
+  // un botón que no hace nada es peor que no tener botón.
+  const resetAll = () => update({ ...EMPTY_FILTERS, q: null });
 
   const hasQuery = Boolean(filters.q);
   const isFiltered = chips.length > 0 || hasQuery;
@@ -325,8 +343,8 @@ export function HomePage() {
               }
               action={
                 isFiltered ? (
-                  <button type="button" className="button button--dark" onClick={clearAll}>
-                    Limpiar los filtros
+                  <button type="button" className="button button--dark" onClick={resetAll}>
+                    Limpiar la búsqueda
                   </button>
                 ) : canTrade ? (
                   <Link className="button button--dark" to={isAuthenticated ? "/publicar" : "/registro"}>

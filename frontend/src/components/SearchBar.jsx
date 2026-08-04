@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { auctionsApi } from "../api/client";
+import { findFolded } from "../utils/highlight";
 
 // Lo que se teclea no se consulta letra por letra: se espera a que la persona deje de
 // escribir. 180 ms es el punto donde la lista ya se siente instantánea y el servidor deja
@@ -18,19 +19,17 @@ function useDebounced(value, delay) {
   return settled;
 }
 
-// Resalta el trozo que coincide con lo tecleado, comparando sin tildes y sin mayúsculas
-// para que "camion" ilumine "Camión". Se resalta sobre el texto original: lo normalizado
-// sirve para encontrar la posición, nunca para mostrarse.
-const fold = (text) => text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es");
-
+// Resalta el trozo que coincide con lo tecleado. La comparación ignora tildes y
+// mayúsculas —"camion" ilumina "Camión"— pero lo que se muestra es siempre el texto tal
+// como está escrito; `findFolded` traduce la coincidencia a posiciones del original.
 function Highlighted({ text, term }) {
-  const start = term ? fold(text).indexOf(fold(term)) : -1;
-  if (start < 0) return text;
+  const match = findFolded(text, term);
+  if (!match) return text;
   return (
     <>
-      {text.slice(0, start)}
-      <mark>{text.slice(start, start + term.length)}</mark>
-      {text.slice(start + term.length)}
+      {text.slice(0, match.start)}
+      <mark>{text.slice(match.start, match.end)}</mark>
+      {text.slice(match.end)}
     </>
   );
 }
@@ -84,6 +83,10 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
 
   const commit = (term) => {
     setOpen(false);
+    // Se vacía la lista, no sólo se oculta. Si sólo se ocultaba, volver a poner el cursor
+    // en la caja mostraba un instante las sugerencias de la palabra anterior.
+    setSuggestions([]);
+    setHighlighted(-1);
     onSearch(term.trim());
   };
 

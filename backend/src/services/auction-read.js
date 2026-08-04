@@ -368,20 +368,31 @@ export async function listAuctions({
          FROM listing ${excluding('condition')} GROUP BY product_condition
        UNION ALL
        SELECT 'shipping', shipping_method, count(*)::int
-         FROM listing ${excluding('shipping')} GROUP BY shipping_method`,
+         FROM listing ${excluding('shipping')} GROUP BY shipping_method
+       UNION ALL
+       -- El total va aquí y no en una ventana sobre la página, porque una página fuera de
+       -- rango no devuelve ninguna fila que pueda cargarlo: el total salía cero, la
+       -- paginación se escondía y quien había pasado de largo quedaba encerrado en una
+       -- lista vacía sin manera de volver.
+       SELECT 'total', 'total', count(*)::int
+         FROM listing ${clauses(allFilters)}`,
       facetValues,
     ),
   ]);
 
-  // El total real lo trae la ventana sobre el conjunto filtrado; cuando la página viene
-  // vacía no hay fila que lo cargue, y entonces el total es cero por definición.
-  const total = rows.rows[0]?.total_count ?? 0;
-
   const facets = { status: {}, category: {}, condition: {}, shipping: {} };
+  let total = null;
   for (const row of facetRows.rows) {
+    if (row.facet === 'total') {
+      total = row.total;
+      continue;
+    }
     if (row.value == null) continue;
     facets[row.facet][row.value] = row.total;
   }
+  // La ventana sobre la página sirve de reserva, pero el recuento que manda es el que se
+  // calculó sobre todo el conjunto filtrado: es el único correcto en una página vacía.
+  if (total == null) total = rows.rows[0]?.total_count ?? 0;
 
   return {
     auctions: rows.rows.map((row) => serializeAuction(row, viewer)),
