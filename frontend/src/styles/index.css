@@ -3136,3 +3136,64 @@ textarea:disabled {
     gap: 10px;
   }
 }
+
+/* ============================================================================
+   Correcciones de la portada
+   ========================================================================== */
+
+/* Lo que se escribía en el buscador era invisible.
+   El campo vive dentro de la banda oscura, que fija `color: white`, y los
+   `input` heredan el color del contorno. Sobre el fondo blanco de la caja eso
+   deja texto blanco sobre blanco: se podía buscar a ciegas —el desplegable
+   respondía— pero no se veía ni una letra ni el cursor. */
+.smart-search__field input {
+  color: var(--ink);
+  caret-color: var(--red);
+}
+
+.smart-search__field input::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
+}
+
+/* El identificador de la subasta es un UUID entero. En la tarjeta ocupaba cinco
+   líneas y se comía el sitio del título; se muestra en una sola, recortado. El
+   valor completo sigue en el atributo `title` para quien lo necesite. */
+.auction-card__lot {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* El sello de entrega se salía de la tarjeta.
+   `.trust-badge` lleva `white-space: nowrap`, así que "Retiro en persona · Las
+   Condes" no podía encogerse ni partirse y se desbordaba por el costado. Ahora
+   ocupa su propia fila y recorta con puntos suspensivos. */
+.auction-card__meta {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+.auction-card__meta > * {
+  min-width: 0;
+}
+
+.auction-card__shipping {
+  grid-column: 1 / -1;
+}
+
+.auction-card__shipping .trust-badge {
+  max-width: 100%;
+}
+
+.auction-card__shipping .trust-badge > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Una publicación con dos etiquetas empujaba el estado a una segunda línea y
+   descuadraba esa tarjeta respecto a las demás. */
+.auction-card__topline {
+  align-items: start;
+  flex-wrap: wrap;
+}

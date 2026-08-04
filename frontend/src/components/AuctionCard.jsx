@@ -27,7 +27,9 @@ export function AuctionCard({ auction, muted = false }) {
 
         <div className="auction-card__content">
           <div>
-            <p className="auction-card__lot">Subasta #{auction.id}</p>
+            {/* El identificador completo queda en el `title`: en pantalla se recorta,
+                pero sigue estando entero para quien lo copie. */}
+            <p className="auction-card__lot" title={`Subasta #${auction.id}`}>Subasta #{auction.id}</p>
             <h3>{auction.title}</h3>
             <p className="auction-card__description">{auction.description || "Sin descripción."}</p>
           </div>
