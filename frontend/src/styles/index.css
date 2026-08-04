@@ -3197,3 +3197,21 @@ textarea:disabled {
   align-items: start;
   flex-wrap: wrap;
 }
+
+/* Al hacer clic, el campo de búsqueda parecía hincharse.
+   La regla de foco de la banda oscura pinta un contorno BLANCO de 2px separado
+   otros 2px, más un halo blanco de 4px. Pensada para los botones sobre el fondo
+   oscuro, se aplicaba también a este input, que está sobre una caja blanca: el
+   anillo blanco se fundía con ella y sobresalía por arriba y por abajo, así que
+   la caja parecía crecer sola al pincharla.
+   El foco se marca ahora en el borde del propio campo. El borde ya existía
+   —transparente— y el halo va hacia dentro, así que no se mueve ni un píxel. */
+.smart-search__field input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.smart-search__field:focus-within {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
