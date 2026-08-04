@@ -4,25 +4,7 @@ import { serverNowMs } from "../utils/server-clock";
 import { InlineNotice, Spinner } from "./States";
 import { downscaleImage } from "../utils/image";
 import { LegalConsent } from "./LegalConsent";
-
-const CATEGORIES = [
-  "Tecnología",
-  "Vehículos",
-  "Hogar",
-  "Herramientas",
-  "Deportes",
-  "Moda",
-  "Coleccionables",
-  "Industrial",
-  "Otros",
-];
-
-const CONDITIONS = ["Nuevo", "Como nuevo", "Usado", "Para reparar"];
-
-const SHIPPING = [
-  { value: "PICKUP", label: "Retiro en persona" },
-  { value: "CHILEXPRESS", label: "Envío por Chilexpress" },
-];
+import { CATEGORIES, CONDITIONS, SHIPPING } from "../utils/taxonomy";
 
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 const MAX_IMAGES = 8;

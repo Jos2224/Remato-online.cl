@@ -256,8 +256,18 @@ function auctionPayload(data) {
 }
 
 function queryString(params = {}) {
-  const entries = Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== "");
-  return entries.length ? `?${new URLSearchParams(entries).toString()}` : "";
+  const entries = Object.entries(params).filter(([, value]) => {
+    if (value === undefined || value === null || value === "") return false;
+    // Una faceta sin nada marcado no es un filtro vacío: es la ausencia del filtro. Sin
+    // esto se enviaría `status=` y la API rechazaría la lista por venir vacía.
+    if (Array.isArray(value)) return value.length > 0;
+    return true;
+  });
+  // Las listas viajan separadas por comas (`status=ACTIVE,SOLD`), que es lo que espera la
+  // API y lo que se puede pegar en un chat sin que se rompa.
+  return entries.length
+    ? `?${new URLSearchParams(entries.map(([key, value]) => [key, Array.isArray(value) ? value.join(",") : value])).toString()}`
+    : "";
 }
 
 export const authApi = {
@@ -296,10 +306,25 @@ export const auctionsApi = {
     const items = (Array.isArray(source) ? source : []).map(normalizeAuction);
     return {
       items,
+      // Recuentos por faceta calculados por el motor sobre TODO el catálogo, no sobre la
+      // página visible: es lo que permite decir "Vendidas (12)" sin traerse las doce.
+      facets: data.facets ?? { status: {}, category: {}, condition: {}, shipping: {} },
       total: asNumber(pagination.total, items.length),
       limit: asNumber(pagination.limit, params.limit ?? 30),
       offset: asNumber(pagination.offset, params.offset ?? 0),
     };
+  },
+  // Sugerencias mientras se teclea. Devuelve [] ante cualquier fallo: un desplegable de
+  // ayuda que rompe la página con un error sería peor que no tener sugerencias.
+  async suggest(q, { signal } = {}) {
+    if (!q?.trim()) return [];
+    try {
+      const payload = await request(`/auctions/suggestions${queryString({ q: q.trim() })}`, { signal });
+      const data = payload?.data ?? payload ?? {};
+      return Array.isArray(data.suggestions) ? data.suggestions : [];
+    } catch {
+      return [];
+    }
   },
   async get(id) {
     return normalizeAuction(unwrap(await request(`/auctions/${encodeURIComponent(id)}`), ["auction"]));

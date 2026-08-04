@@ -3,7 +3,9 @@ import { notFound } from '../lib/api-error.js';
 import { isAdmin, maskEmail, publicAlias } from '../lib/privacy.js';
 import { imageUrlFor } from '../lib/images.js';
 
-const auctionSelect = `
+// Se construye como función porque la portada necesita añadir la tabla de búsqueda y su
+// columna de relevancia sin duplicar los joins de abajo.
+const auctionSelect = (extraColumns = '', extraJoins = '') => `
   SELECT
     a.*,
     seller.email AS seller_email,
@@ -30,7 +32,7 @@ const auctionSelect = `
     current_match.offered_amount AS current_match_amount,
     current_match.started_at AS current_match_started_at,
     current_match.expires_at AS current_match_expires_at,
-    COALESCE(gallery.images, '[]'::json) AS images
+    COALESCE(gallery.images, '[]'::json) AS images${extraColumns ? `,\n    ${extraColumns}` : ''}
   FROM auctions a
   JOIN users seller ON seller.id = a.seller_id
   LEFT JOIN LATERAL (
@@ -67,6 +69,7 @@ const auctionSelect = `
     ORDER BY created_at DESC
     LIMIT 1
   ) my_bid ON true
+  ${extraJoins}
 `;
 
 const iso = (value) => (value ? new Date(value).toISOString() : null);
@@ -170,7 +173,7 @@ export function serializeAuction(row, viewer) {
 }
 
 export async function getAuctionById(auctionId, viewer, db = pool) {
-  const result = await db.query(`${auctionSelect} WHERE a.id = $2`, [
+  const result = await db.query(`${auctionSelect()} WHERE a.id = $2`, [
     viewer?.id ?? null,
     auctionId,
   ]);
@@ -191,81 +194,257 @@ export async function getPublicBids(auctionId, viewer, db = pool) {
   return result.rows.map((row) => serializeBid(row, viewer));
 }
 
+
+export const AUCTION_STATUSES = Object.freeze(['ACTIVE', 'MATCHING', 'SOLD', 'NO_MATCH']);
+
+// El orden por defecto de la portada: primero lo que todavía acepta ofertas, y dentro de
+// eso lo que cierra antes. Es la única lista donde la urgencia importa más que la fecha.
+const URGENCY_ORDER = `
+  CASE status WHEN 'ACTIVE' THEN 0 WHEN 'MATCHING' THEN 1 ELSE 2 END,
+  CASE WHEN status = 'ACTIVE' THEN closes_at END ASC,
+  CASE WHEN status <> 'ACTIVE' THEN updated_at END DESC,
+  created_at DESC
+`;
+
+export const AUCTION_SORTS = Object.freeze({
+  relevance: `relevance DESC NULLS LAST, ${URGENCY_ORDER}`,
+  closing: URGENCY_ORDER,
+  newest: 'created_at DESC',
+  // NULLS LAST porque una venta sin monto registrado no es "lo más caro": sin esto se
+  // colaba a la cabeza de la lista al ordenar de mayor a menor.
+  priceAsc: 'current_price ASC NULLS LAST, closes_at ASC',
+  priceDesc: 'current_price DESC NULLS LAST, closes_at ASC',
+  bids: 'bid_count DESC, closes_at ASC',
+});
+
+// Un `%` o un `_` escritos por quien busca son literales, no comodines: si no se escapan,
+// buscar "50_" devuelve media base.
+const escapeLike = (term) => term.replace(/([\\%_])/g, '\\$1');
+
+/**
+ * Acumula parámetros posicionales para que las condiciones puedan escribirse en cualquier
+ * orden sin llevar la cuenta de los `$n` a mano.
+ */
+function parameters(initial = []) {
+  const values = [...initial];
+  return {
+    values,
+    add(value) {
+      values.push(value);
+      return `$${values.length}`;
+    },
+  };
+}
+
+const clauses = (conditions) => {
+  const present = conditions.filter(Boolean);
+  return present.length > 0 ? `WHERE ${present.join(' AND ')}` : '';
+};
+
 export async function listAuctions({
   viewer,
   status,
+  statuses,
   sellerId,
   mine,
   participating,
+  q,
+  category,
+  condition,
+  shippingMethod,
+  priceMin,
+  priceMax,
+  sort,
   limit,
   offset,
 }) {
-  const conditions = [];
-  const countConditions = [];
-  const values = [viewer?.id ?? null];
-  const countValues = [];
-  if (status) {
-    values.push(status);
-    conditions.push(`a.status = $${values.length}`);
-    countValues.push(status);
-    countConditions.push(`a.status = $${countValues.length}`);
-  }
-  if (sellerId) {
-    values.push(sellerId);
-    conditions.push(`a.seller_id = $${values.length}`);
-    countValues.push(sellerId);
-    countConditions.push(`a.seller_id = $${countValues.length}`);
-  }
-  if (mine) {
-    values.push(viewer.id);
-    conditions.push(`a.seller_id = $${values.length}`);
-    countValues.push(viewer.id);
-    countConditions.push(`a.seller_id = $${countValues.length}`);
-  }
-  if (participating) {
-    values.push(viewer.id);
-    conditions.push(
-      `EXISTS (
-        SELECT 1 FROM bids viewer_bid
-        WHERE viewer_bid.auction_id = a.id
-          AND viewer_bid.bidder_id = $${values.length}
-          AND viewer_bid.status NOT IN ('REPLACED', 'WITHDRAWN')
-      )`,
-    );
-    countValues.push(viewer.id);
-    countConditions.push(
-      `EXISTS (
-        SELECT 1 FROM bids viewer_bid
-        WHERE viewer_bid.auction_id = a.id
-          AND viewer_bid.bidder_id = $${countValues.length}
-          AND viewer_bid.status NOT IN ('REPLACED', 'WITHDRAWN')
-      )`,
-    );
-  }
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-  const countWhere =
-    countConditions.length > 0 ? `WHERE ${countConditions.join(' AND ')}` : '';
-  values.push(limit, offset);
-  const limitParameter = `$${values.length - 1}`;
-  const offsetParameter = `$${values.length}`;
+  const parameter = parameters([viewer?.id ?? null]);
+  const term = typeof q === 'string' ? q.trim() : '';
 
-  const [rows, count] = await Promise.all([
+  // --- Condiciones que definen el conjunto sobre el que se cuenta todo -----------------
+  // Van dentro del CTE porque acotan "de qué estamos hablando". Los filtros de las facetas
+  // van fuera, para que cada faceta pueda contarse ignorándose a sí misma.
+  const base = [];
+  let relevanceColumn = '0::float4 AS relevance';
+  let searchJoin = '';
+
+  if (term) {
+    const needle = parameter.add(term);
+    searchJoin = 'LEFT JOIN auction_search search ON search.auction_id = a.id';
+    // Tres formas de encontrar lo mismo, porque quien busca falla de tres maneras
+    // distintas: escribe bien pero con otra flexión ("camiones" → "camión"), escribe con
+    // una errata ("guitara"), o escribe a medias porque va tecleando ("guit").
+    base.push(`(
+      search.search_vector @@ websearch_to_tsquery('spanish', remato_unaccent(lower(${needle})))
+      OR remato_unaccent(lower(${needle})) <% search.search_terms
+      OR search.search_terms LIKE '%' || remato_unaccent(lower(${parameter.add(escapeLike(term))})) || '%' ESCAPE '\\'
+    )`);
+    // El texto completo manda sobre el parecido tipográfico: una coincidencia real vale
+    // más que una errata que se le parece.
+    relevanceColumn = `(
+      ts_rank(
+        COALESCE(search.search_vector, ''::tsvector),
+        websearch_to_tsquery('spanish', remato_unaccent(lower(${needle})))
+      ) * 4
+      + word_similarity(remato_unaccent(lower(${needle})), COALESCE(search.search_terms, ''))
+    )::float4 AS relevance`;
+  }
+
+  if (sellerId) base.push(`a.seller_id = ${parameter.add(sellerId)}`);
+  if (mine) base.push(`a.seller_id = ${parameter.add(viewer.id)}`);
+  if (participating) {
+    base.push(`EXISTS (
+      SELECT 1 FROM bids viewer_bid
+      WHERE viewer_bid.auction_id = a.id
+        AND viewer_bid.bidder_id = ${parameter.add(viewer.id)}
+        AND viewer_bid.status NOT IN ('REPLACED', 'WITHDRAWN')
+    )`);
+  }
+
+  const listing = `${auctionSelect(relevanceColumn, searchJoin)} ${clauses(base)}`;
+
+  // --- Filtros de faceta, aplicados por fuera ----------------------------------------
+  const selectedStatuses = (statuses?.length ? statuses : status ? [status] : []).filter((value) =>
+    AUCTION_STATUSES.includes(value),
+  );
+  const statusFilter = selectedStatuses.length
+    ? `status = ANY(${parameter.add(selectedStatuses)})`
+    : null;
+  const categoryFilter = category?.length ? `category = ANY(${parameter.add(category)})` : null;
+  const conditionFilter = condition?.length
+    ? `product_condition = ANY(${parameter.add(condition)})`
+    : null;
+  const shippingFilter = shippingMethod?.length
+    ? `shipping_method = ANY(${parameter.add(shippingMethod)})`
+    : null;
+  // El precio se filtra por el precio vigente (la puja más alta), no por el inicial: es el
+  // número que quien mira tiene delante en la tarjeta.
+  const priceFilter = [
+    priceMin != null ? `current_price >= ${parameter.add(priceMin)}` : null,
+    priceMax != null ? `current_price <= ${parameter.add(priceMax)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' AND ');
+
+  const facetFilters = {
+    status: statusFilter,
+    category: categoryFilter,
+    condition: conditionFilter,
+    shipping: shippingFilter,
+    price: priceFilter || null,
+  };
+  const allFilters = Object.values(facetFilters);
+  // Cada faceta se cuenta con todos los filtros puestos MENOS el suyo. Es lo que hace que
+  // los números de la barra lateral sigan siendo útiles después de marcar una casilla:
+  // "Vendidas (12)" tiene que seguir diciendo cuántas habría si cambiaras de estado.
+  const excluding = (name) => clauses(allFilters.filter((filter) => filter !== facetFilters[name]));
+
+  const order = AUCTION_SORTS[sort] ?? (term ? AUCTION_SORTS.relevance : AUCTION_SORTS.closing);
+  // La consulta de facetas no pagina, así que no puede recibir los parámetros de la
+  // página: Postgres rechaza un bind con más parámetros de los que el enunciado usa.
+  const facetValues = [...parameter.values];
+  const limitParameter = parameter.add(limit);
+  const offsetParameter = parameter.add(offset);
+
+  const [rows, facetRows] = await Promise.all([
     pool.query(
-      `${auctionSelect}
-       ${where}
-       ORDER BY
-         CASE a.status WHEN 'ACTIVE' THEN 0 WHEN 'MATCHING' THEN 1 ELSE 2 END,
-         CASE WHEN a.status = 'ACTIVE' THEN a.closes_at END ASC,
-         CASE WHEN a.status <> 'ACTIVE' THEN a.updated_at END DESC,
-         a.created_at DESC
+      `WITH listing AS (${listing})
+       SELECT *, count(*) OVER ()::int AS total_count
+       FROM listing
+       ${clauses(allFilters)}
+       ORDER BY ${order}
        LIMIT ${limitParameter} OFFSET ${offsetParameter}`,
-      values,
+      parameter.values,
     ),
-    pool.query(`SELECT count(*)::int AS total FROM auctions a ${countWhere}`, countValues),
+    pool.query(
+      `WITH listing AS (${listing})
+       SELECT 'status' AS facet, status AS value, count(*)::int AS total
+         FROM listing ${excluding('status')} GROUP BY status
+       UNION ALL
+       SELECT 'category', category, count(*)::int
+         FROM listing ${excluding('category')} GROUP BY category
+       UNION ALL
+       SELECT 'condition', product_condition, count(*)::int
+         FROM listing ${excluding('condition')} GROUP BY product_condition
+       UNION ALL
+       SELECT 'shipping', shipping_method, count(*)::int
+         FROM listing ${excluding('shipping')} GROUP BY shipping_method`,
+      facetValues,
+    ),
   ]);
+
+  // El total real lo trae la ventana sobre el conjunto filtrado; cuando la página viene
+  // vacía no hay fila que lo cargue, y entonces el total es cero por definición.
+  const total = rows.rows[0]?.total_count ?? 0;
+
+  const facets = { status: {}, category: {}, condition: {}, shipping: {} };
+  for (const row of facetRows.rows) {
+    if (row.value == null) continue;
+    facets[row.facet][row.value] = row.total;
+  }
 
   return {
     auctions: rows.rows.map((row) => serializeAuction(row, viewer)),
-    pagination: { limit, offset, total: count.rows[0].total },
+    facets,
+    pagination: { limit, offset, total },
   };
+}
+
+/**
+ * Sugerencias del buscador: lo que se ofrece mientras se teclea.
+ *
+ * Devuelve títulos reales del catálogo y categorías con su recuento; nunca nombres,
+ * correos ni comunas de quien vende, porque el desplegable se ve sin sesión iniciada y
+ * un buscador que autocompleta personas es un directorio de usuarios disfrazado.
+ */
+export async function suggestSearchTerms({ q, limit }) {
+  const term = q.trim();
+  if (!term) return [];
+
+  const needle = `remato_unaccent(lower($1))`;
+  const matches = `(
+    search.search_vector @@ websearch_to_tsquery('spanish', ${needle})
+    OR ${needle} <% search.search_terms
+    OR search.search_terms LIKE '%' || remato_unaccent(lower($2)) || '%' ESCAPE '\\'
+  )`;
+
+  const result = await pool.query(
+    `WITH matched AS (
+       SELECT a.id, a.title, a.category, a.status, search.search_terms
+       FROM auctions a
+       JOIN auction_search search ON search.auction_id = a.id
+       WHERE ${matches}
+     )
+     SELECT * FROM (
+       SELECT
+         'auction' AS kind,
+         title AS label,
+         id::text AS value,
+         NULL::int AS total,
+         -- Lo que todavía acepta ofertas se ofrece primero: sugerir una subasta cerrada
+         -- es mandar a quien busca a una página donde no puede hacer nada.
+         (CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END)::float4
+           + word_similarity(remato_unaccent(lower($1)), search_terms) AS score
+       FROM matched
+       ORDER BY score DESC
+       LIMIT $3
+     ) titles
+     UNION ALL
+     SELECT * FROM (
+       SELECT 'category' AS kind, category AS label, category AS value,
+              count(*)::int AS total, 0::float4 AS score
+       FROM matched
+       GROUP BY category
+       ORDER BY count(*) DESC
+       LIMIT 3
+     ) categories`,
+    [term, escapeLike(term), limit],
+  );
+
+  return result.rows.map((row) => ({
+    kind: row.kind,
+    label: row.label,
+    value: row.value,
+    ...(row.total == null ? {} : { count: row.total }),
+  }));
 }

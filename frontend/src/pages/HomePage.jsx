@@ -1,154 +1,343 @@
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { auctionsApi } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { AuctionCard } from "../components/AuctionCard";
+import { BrowseFilters } from "../components/BrowseFilters";
+import { SearchBar } from "../components/SearchBar";
 import { EmptyState, ErrorState, PageLoader } from "../components/States";
 import { urgencyInterval, usePollingQuery } from "../hooks/usePollingQuery";
+import { AUCTION_STATES, CATEGORIES, CONDITIONS, SHIPPING } from "../utils/taxonomy";
 
-const SORTS = {
-  closing: { label: "Cierre más próximo", compare: (a, b) => new Date(a.endsAt) - new Date(b.endsAt) },
-  priceAsc: { label: "Precio: menor a mayor", compare: (a, b) => a.currentPrice - b.currentPrice },
-  priceDesc: { label: "Precio: mayor a menor", compare: (a, b) => b.currentPrice - a.currentPrice },
-  bids: { label: "Más pujas", compare: (a, b) => b.bidCount - a.bidCount },
+const PER_PAGE = 24;
+
+// Lo que ve quien llega sin pedir nada: sólo lo que todavía acepta ofertas. Las vendidas y
+// las terminadas siguen ahí, pero se piden marcando su casilla. Es una portada de lo que
+// se puede comprar ahora, no un archivo histórico.
+const DEFAULT_STATUS = ["ACTIVE"];
+
+const SORTS = [
+  { value: "closing", label: "Cierre más próximo" },
+  { value: "newest", label: "Publicadas hace poco" },
+  { value: "priceAsc", label: "Precio: menor a mayor" },
+  { value: "priceDesc", label: "Precio: mayor a menor" },
+  { value: "bids", label: "Más pujas" },
+];
+
+// Facetas que admiten varias marcas a la vez.
+const MULTI = ["status", "category", "condition", "shippingMethod"];
+
+const LABELS = {
+  status: Object.fromEntries(AUCTION_STATES.map(({ value, label }) => [value, label])),
+  category: Object.fromEntries(CATEGORIES.map((value) => [value, value])),
+  condition: Object.fromEntries(CONDITIONS.map((value) => [value, value])),
+  shippingMethod: Object.fromEntries(SHIPPING.map(({ value, label }) => [value, label])),
+};
+
+const readList = (params, key, fallback = []) => {
+  const raw = params.get(key);
+  if (raw == null) return fallback;
+  return raw.split(",").map((item) => item.trim()).filter(Boolean);
+};
+
+const readNumber = (params, key) => {
+  const raw = params.get(key);
+  if (raw == null || raw === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : null;
 };
 
 export function HomePage() {
   const { isAuthenticated, user } = useAuth();
   const canTrade = !isAuthenticated || user?.role === "user";
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("Todas");
-  const [sort, setSort] = useState("closing");
-  const { data: page, loading, error, reload } = usePollingQuery(
-    () => auctionsApi.listPaged({ limit: 100 }),
-    // Speeds up to 2s in the final minute of the auction closing soonest.
-    { interval: (current) => urgencyInterval((current?.items ?? []).map((item) => item.endsAt)) },
-  );
-  const auctions = page?.items;
-  const total = page?.total ?? 0;
+  const [params, setParams] = useSearchParams();
 
-  const categories = useMemo(
-    () => ["Todas", ...new Set((auctions || []).map((auction) => auction.category).filter(Boolean))],
-    [auctions],
+  // Todo el estado del buscador vive en la URL. Así el botón "atrás" funciona, se puede
+  // recargar sin perder los filtros, y un resultado se comparte pegando el enlace.
+  const filters = useMemo(
+    () => ({
+      q: params.get("q") ?? "",
+      status: readList(params, "status", DEFAULT_STATUS),
+      category: readList(params, "category"),
+      condition: readList(params, "condition"),
+      shippingMethod: readList(params, "shippingMethod"),
+      priceMin: readNumber(params, "priceMin"),
+      priceMax: readNumber(params, "priceMax"),
+      sort: params.get("sort") ?? "",
+      page: Math.max(1, Number(params.get("page")) || 1),
+      view: params.get("view") === "list" ? "list" : "grid",
+    }),
+    [params],
   );
 
-  const visible = useMemo(() => {
-    const term = query.trim().toLocaleLowerCase("es");
-    return (auctions || []).filter((auction) => {
-      const matchesCategory = category === "Todas" || auction.category === category;
-      const haystack = `${auction.title} ${auction.description} ${auction.seller.displayName} ${auction.commune}`.toLocaleLowerCase("es");
-      return matchesCategory && (!term || haystack.includes(term));
+  const update = useCallback(
+    (patch, { keepPage = false } = {}) => {
+      const next = new URLSearchParams(params);
+      for (const [key, value] of Object.entries(patch)) {
+        const empty = value == null || value === "" || (Array.isArray(value) && value.length === 0);
+        if (empty) next.delete(key);
+        else next.set(key, Array.isArray(value) ? value.join(",") : String(value));
+      }
+      // Cambiar un filtro estando en la página 4 dejaba una lista vacía sin explicación:
+      // cualquier cambio que no sea de paginación vuelve al principio.
+      if (!keepPage) next.delete("page");
+      setParams(next);
+    },
+    [params, setParams],
+  );
+
+  const toggle = useCallback(
+    (key, value) => {
+      const current = filters[key];
+      const next = current.includes(value)
+        ? current.filter((item) => item !== value)
+        : [...current, value];
+      // Desmarcar el último estado no significa "no quiero ver nada": vuelve al defecto.
+      if (key === "status" && next.length === 0) update({ status: null });
+      else update({ [key]: next });
+    },
+    [filters, update],
+  );
+
+  const offset = (filters.page - 1) * PER_PAGE;
+  // Sin orden elegido y con texto buscado, el servidor ya ordena por relevancia.
+  const sort = filters.sort || undefined;
+  const requestKey = params.toString();
+
+  const { data, loading, error, reload } = usePollingQuery(
+    () =>
+      auctionsApi.listPaged({
+        q: filters.q || undefined,
+        status: filters.status,
+        category: filters.category,
+        condition: filters.condition,
+        shippingMethod: filters.shippingMethod,
+        priceMin: filters.priceMin ?? undefined,
+        priceMax: filters.priceMax ?? undefined,
+        sort,
+        limit: PER_PAGE,
+        offset,
+      }),
+    {
+      interval: (current) => urgencyInterval((current?.items ?? []).map((item) => item.endsAt)),
+      deps: [requestKey],
+    },
+  );
+
+  const auctions = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const facets = data?.facets ?? { status: {}, category: {}, condition: {}, shipping: {} };
+  const pages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const firstShown = total === 0 ? 0 : offset + 1;
+  const lastShown = Math.min(offset + auctions.length, total);
+
+  // Las marcas puestas a mano, para poder contarlas y quitarlas de una en una. El estado
+  // por defecto no cuenta: nadie lo eligió.
+  const chips = useMemo(() => {
+    const list = [];
+    for (const key of MULTI) {
+      const isDefaultStatus =
+        key === "status" &&
+        filters.status.length === DEFAULT_STATUS.length &&
+        filters.status.every((value) => DEFAULT_STATUS.includes(value));
+      if (isDefaultStatus) continue;
+      for (const value of filters[key]) {
+        list.push({ key, value, label: LABELS[key][value] ?? value });
+      }
+    }
+    if (filters.priceMin != null || filters.priceMax != null) {
+      list.push({ key: "price", value: "price", label: "Precio acotado" });
+    }
+    return list;
+  }, [filters]);
+
+  const removeChip = (chip) => {
+    if (chip.key === "price") update({ priceMin: null, priceMax: null });
+    else toggle(chip.key, chip.value);
+  };
+
+  const clearAll = () =>
+    update({
+      status: null,
+      category: null,
+      condition: null,
+      shippingMethod: null,
+      priceMin: null,
+      priceMax: null,
     });
-  }, [auctions, category, query]);
 
-  const active = visible
-    .filter((auction) => auction.status === "active")
-    .sort(SORTS[sort]?.compare ?? SORTS.closing.compare);
-  const ended = visible
-    .filter((auction) => auction.status !== "active")
-    .sort((a, b) => new Date(b.endsAt) - new Date(a.endsAt));
+  const hasQuery = Boolean(filters.q);
+  const isFiltered = chips.length > 0 || hasQuery;
 
   return (
     <>
-      <section className="hero">
-        <div className="container hero__grid">
-          <div>
+      {/* Banda de entrada, no portada de revista: el buscador es lo primero y la lista
+          empieza inmediatamente debajo. */}
+      <section className="browse-hero">
+        <div className="container browse-hero__inner">
+          <div className="browse-hero__lead">
             <span className="eyebrow eyebrow--light">Subastas en línea · Chile</span>
-            <h1>Lo publicas.<br />Ellos deciden<br /><em>cuánto vale.</em></h1>
-            <p>Subastas simples entre personas, con pujas públicas y fondos comprometidos de verdad.</p>
-            <div className="hero__actions">
-              <a className="button button--light button--large" href="#activas">Ver subastas</a>
-              {canTrade && (
-                <Link className="button button--outline-light button--large" to={isAuthenticated ? "/publicar" : "/registro"}>
-                  Publicar un producto
-                </Link>
-              )}
-            </div>
+            <h1>Lo publicas. <em>Ellos deciden cuánto vale.</em></h1>
           </div>
-          <aside className="hero__rules" aria-label="Reglas principales">
-            <p className="hero__number">01</p>
-            <h2>Directo y transparente.</h2>
-            <ul>
-              <li><span>Incremento mínimo por tramo</span><strong>Pujas que suman de verdad</strong></li>
-              <li><span>Cierre exacto con prórroga</span><strong>Reloj de Chile</strong></li>
-              <li><span>Historial público</span><strong>Cada puja activa queda visible</strong></li>
-            </ul>
-          </aside>
-        </div>
-      </section>
-
-      <section className="market container" id="activas">
-        <div className="market__toolbar">
-          <div>
-            <span className="eyebrow">Mercado abierto</span>
-            <h2>Subastas activas</h2>
-            <p>
-              Productos que todavía aceptan ofertas.
-              {/* Sólo se comparan cosas comparables: antes se mostraba "N de M" mezclando
-                  las activas filtradas con el total de TODAS las publicaciones. */}
-              {active.length > 0 && ` ${active.length} ${active.length === 1 ? "subasta activa" : "subastas activas"}.`}
-              {total > active.length && ` ${total} publicaciones en total.`}
-            </p>
-          </div>
-          <div className="filters" role="search">
-            <label className="search-field">
-              <span className="sr-only">Buscar subastas</span>
-              <span aria-hidden="true">⌕</span>
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar producto o vendedor" />
-            </label>
-            <label>
-              <span className="sr-only">Filtrar por categoría</span>
-              <select value={category} onChange={(event) => setCategory(event.target.value)}>
-                {categories.map((item) => <option value={item} key={item}>{item}</option>)}
-              </select>
-            </label>
-            <label>
-              <span className="sr-only">Ordenar subastas</span>
-              <select value={sort} onChange={(event) => setSort(event.target.value)}>
-                {Object.entries(SORTS).map(([key, option]) => (
-                  <option value={key} key={key}>{option.label}</option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </div>
-
-        {loading ? (
-          <PageLoader label="Buscando subastas" />
-        ) : error && !auctions ? (
-          <ErrorState title="No pudimos cargar las subastas" error={error} onRetry={reload} />
-        ) : active.length ? (
-          <div className="auction-grid">
-            {active.map((auction) => <AuctionCard auction={auction} key={auction.id} />)}
-          </div>
-        ) : (
-          <EmptyState
-            eyebrow={query || category !== "Todas" ? "Sin coincidencias" : "Mercado tranquilo"}
-            title={query || category !== "Todas" ? "No encontramos subastas con esos filtros" : "Todavía no hay subastas activas"}
-            description={query || category !== "Todas" ? "Prueba con otra búsqueda o categoría." : "Sé la primera persona en publicar un producto."}
-            action={canTrade ? <Link className="button button--dark" to={isAuthenticated ? "/publicar" : "/registro"}>Publicar una subasta</Link> : null}
+          <SearchBar
+            value={filters.q}
+            onSearch={(term) => update({ q: term || null })}
+            onPickCategory={(category) => update({ q: null, category: [category] })}
           />
-        )}
-      </section>
-
-      <section className="archive">
-        <div className="container">
-          <div className="section-heading section-heading--archive">
-            <div>
-              <span className="eyebrow">Archivo público</span>
-              <h2>Subastas vencidas</h2>
-            </div>
-            <p>Resultados cerrados: vendidas, en proceso de match o terminadas sin comprador.</p>
+          <div className="browse-hero__shortcuts">
+            <ul className="browse-hero__categories">
+              {CATEGORIES.map((category) => (
+                <li key={category}>
+                  <button
+                    type="button"
+                    className={`chip${filters.category.includes(category) ? " chip--on" : ""}`}
+                    onClick={() => toggle("category", category)}
+                  >
+                    {category}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {canTrade && (
+              <Link className="button button--light button--small" to={isAuthenticated ? "/publicar" : "/registro"}>
+                Publicar un producto
+              </Link>
+            )}
           </div>
-          {ended.length ? (
-            <div className="auction-grid auction-grid--archive">
-              {ended.map((auction) => <AuctionCard auction={auction} muted key={auction.id} />)}
-            </div>
-          ) : (
-            <EmptyState title="Aún no hay subastas vencidas" description="Cuando finalicen, sus resultados aparecerán aquí." />
-          )}
         </div>
       </section>
+
+      <div className="container browse" id="activas">
+        <BrowseFilters
+          facets={facets}
+          filters={filters}
+          onToggle={toggle}
+          onPrice={(priceMin, priceMax) => update({ priceMin, priceMax })}
+          onClear={clearAll}
+          activeCount={chips.length}
+        />
+
+        <section className="browse__results" aria-live="polite">
+          <div className="results-bar">
+            <p className="results-bar__count">
+              {total === 0 ? (
+                "Sin resultados"
+              ) : (
+                <>
+                  <strong>{firstShown}–{lastShown}</strong> de <strong>{total}</strong>{" "}
+                  {total === 1 ? "subasta" : "subastas"}
+                  {hasQuery && <> para “{filters.q}”</>}
+                </>
+              )}
+            </p>
+            <div className="results-bar__tools">
+              <label className="results-bar__sort">
+                <span className="sr-only">Ordenar resultados</span>
+                <select value={filters.sort} onChange={(event) => update({ sort: event.target.value || null })}>
+                  <option value="">{hasQuery ? "Más relevantes" : "Orden por defecto"}</option>
+                  {SORTS.map((option) => (
+                    <option value={option.value} key={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="view-toggle" role="group" aria-label="Forma de ver los resultados">
+                {[
+                  { value: "grid", label: "Cuadrícula", glyph: "▦" },
+                  { value: "list", label: "Lista", glyph: "☰" },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={filters.view === option.value ? "is-on" : ""}
+                    aria-pressed={filters.view === option.value}
+                    title={option.label}
+                    onClick={() => update({ view: option.value === "grid" ? null : option.value }, { keepPage: true })}
+                  >
+                    <span aria-hidden="true">{option.glyph}</span>
+                    <span className="sr-only">{option.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {chips.length > 0 && (
+            <ul className="applied-filters">
+              {chips.map((chip) => (
+                <li key={`${chip.key}-${chip.value}`}>
+                  <button type="button" className="chip chip--removable" onClick={() => removeChip(chip)}>
+                    {chip.label}
+                    <span aria-hidden="true">×</span>
+                    <span className="sr-only">Quitar filtro</span>
+                  </button>
+                </li>
+              ))}
+              <li>
+                <button type="button" className="applied-filters__clear" onClick={clearAll}>
+                  Limpiar todo
+                </button>
+              </li>
+            </ul>
+          )}
+
+          {loading && !data ? (
+            <PageLoader label="Buscando subastas" />
+          ) : error && !data ? (
+            <ErrorState title="No pudimos cargar las subastas" error={error} onRetry={reload} />
+          ) : auctions.length ? (
+            <>
+              <div className={`auction-grid${filters.view === "list" ? " auction-grid--list" : ""}`}>
+                {auctions.map((auction) => (
+                  <AuctionCard auction={auction} muted={auction.status !== "active"} key={auction.id} />
+                ))}
+              </div>
+
+              {pages > 1 && (
+                <nav className="pager" aria-label="Paginación de resultados">
+                  <button
+                    type="button"
+                    disabled={filters.page <= 1}
+                    onClick={() => update({ page: filters.page - 1 }, { keepPage: true })}
+                  >
+                    ← Anterior
+                  </button>
+                  <span className="pager__position">
+                    Página {filters.page} de {pages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={filters.page >= pages}
+                    onClick={() => update({ page: filters.page + 1 }, { keepPage: true })}
+                  >
+                    Siguiente →
+                  </button>
+                </nav>
+              )}
+            </>
+          ) : (
+            <EmptyState
+              eyebrow={isFiltered ? "Sin coincidencias" : "Mercado tranquilo"}
+              title={isFiltered ? "No encontramos subastas con esos filtros" : "Todavía no hay subastas activas"}
+              description={
+                isFiltered
+                  ? "Prueba con otras palabras, o quita algún filtro. Lo ya cerrado se ve marcando “Vendidas” o “Terminadas sin comprador”."
+                  : "Sé la primera persona en publicar un producto."
+              }
+              action={
+                isFiltered ? (
+                  <button type="button" className="button button--dark" onClick={clearAll}>
+                    Limpiar los filtros
+                  </button>
+                ) : canTrade ? (
+                  <Link className="button button--dark" to={isAuthenticated ? "/publicar" : "/registro"}>
+                    Publicar una subasta
+                  </Link>
+                ) : null
+              }
+            />
+          )}
+        </section>
+      </div>
 
       <section className="how-it-works container">
         <div className="section-heading">

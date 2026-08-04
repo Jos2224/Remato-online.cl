@@ -9,7 +9,7 @@ import {
 
 /* ============================================================
    RematoOnline.cl — subastas en línea
-   Estructura tipo eBay · diseño minimalista
+   Estructura de portada · diseño minimalista
    ============================================================ */
 
 const MIN = 60000, HOUR = 3600000, DAY = 86400000;

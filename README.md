@@ -9,7 +9,8 @@ MVP de subastas abiertas entre particulares. Cualquier visitante puede ver los p
 - Publicaciones de texto con título, descripción, categoría, estado, precio inicial, comuna, entrega y cierre con hora/minuto de Chile.
 - Pujas manuales con incremento mínimo por tramo, historial público y alias en vez de correo.
 - Saldo interno de prueba: el usuario puede depositar o retirar confiando en su declaración; cada movimiento queda registrado en el backend.
-- Portada con subastas activas arriba y vencidas abajo, indicando si terminaron vendidas o sin match.
+- Portada de navegación: buscador arriba, facetas al costado y resultados paginados. Por defecto sólo se listan las subastas que aceptan ofertas; las vendidas, las que están en posta y las terminadas sin comprador se piden marcando su casilla en «Estado de la subasta».
+- Búsqueda resuelta en PostgreSQL, no en el navegador: encuentra sin tildes («camion» → «Camión»), tolera erratas por trigramas («guitara» → «guitarra»), responde a prefijos mientras se teclea y ordena por relevancia. Cada faceta muestra cuántos resultados tiene, contados sobre todo el catálogo y no sobre la página visible.
 - Un único administrador, identificado por `ADMIN_EMAIL`, que recibe comisiones y penalizaciones.
 
 No incluye por ahora fotos, reputación, reclamos, criptomonedas, logística integrada, notificaciones ni moderación.
@@ -31,6 +32,23 @@ Es un **monolito modular**, no microservicios. Usuarios, subastas, pujas, billet
 No hay un proceso de fondo. El backend compara siempre los plazos con su reloj y sincroniza los estados al consultar o actuar sobre una subasta; el frontend consulta periódicamente mientras está abierto. Por eso, el cierre es lógicamente exacto aunque el cambio se escriba en la base de datos con la primera petición posterior al plazo.
 
 La misma sincronización avanza los turnos de adjudicación vencidos. Si la plataforma pasa un tiempo sin visitas, la siguiente petición procesa de una vez los pasos pendientes. Todas las fechas se guardan en UTC; la interfaz las captura y muestra en `America/Santiago`, respetando automáticamente los cambios de hora de Chile.
+
+### Buscar y filtrar
+
+`GET /api/auctions` acepta, además de `mine`, `participating`, `sellerId`, `limit` y `offset`:
+
+| Parámetro | Valor | Nota |
+| --- | --- | --- |
+| `q` | texto, hasta 120 caracteres | Sin tildes, tolerante a erratas y a prefijos. Sin `sort`, ordena por relevancia. |
+| `status` | `ACTIVE`, `MATCHING`, `SOLD`, `NO_MATCH` | Lista separada por comas. Omitirlo no filtra por estado; es la portada la que pide `ACTIVE`. |
+| `category`, `condition` | vocabulario de `backend/src/domain/taxonomy.js` | Lista separada por comas. |
+| `shippingMethod` | `PICKUP`, `CHILEXPRESS` | Lista separada por comas. |
+| `priceMin`, `priceMax` | entero en pesos | Se aplican al precio vigente (la puja más alta), no al inicial. |
+| `sort` | `closing`, `newest`, `priceAsc`, `priceDesc`, `bids`, `relevance` | Por defecto: relevancia si hay `q`, cierre más próximo si no. |
+
+La respuesta trae `auctions`, `pagination` y `facets`. Los recuentos de cada faceta se calculan con todos los filtros puestos **menos el suyo**, que es lo que permite seguir viendo cuántas subastas vendidas hay mientras se están mirando sólo las activas.
+
+El índice vive en la tabla `auction_search`, aparte de `auctions` y mantenida por un disparador. Está separada a propósito: media aplicación lee una subasta con `SELECT a.*`, y con el `tsvector` en la misma fila cada lectura arrastraría el índice invertido de una descripción de hasta 10.000 caracteres sin que nadie lo use.
 
 ## Reglas centrales
 

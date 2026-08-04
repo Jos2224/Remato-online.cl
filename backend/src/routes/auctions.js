@@ -16,7 +16,14 @@ import { requireAcceptance, signatureEvidence } from '../services/legal.js';
 import { requireAtLeastThreeMinutesAhead } from '../lib/time.js';
 import { moneySchema, validate } from '../lib/validation.js';
 import { optionalAuth, requireAuth } from '../middleware/auth.js';
-import { getAuctionById, getPublicBids, listAuctions } from '../services/auction-read.js';
+import {
+  AUCTION_SORTS,
+  AUCTION_STATUSES,
+  getAuctionById,
+  getPublicBids,
+  listAuctions,
+  suggestSearchTerms,
+} from '../services/auction-read.js';
 import {
   advanceAuctionLocked,
   synchronizeAuction,
@@ -113,16 +120,49 @@ const bidSchema = z
   })
   .strict();
 
-const listSchema = z.object({
-  status: z.enum(['ACTIVE', 'MATCHING', 'SOLD', 'NO_MATCH']).optional(),
-  sellerId: z.string().uuid().optional(),
-  mine: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
-  participating: z
-    .enum(['true', 'false'])
-    .transform((value) => value === 'true')
-    .optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
-  offset: z.coerce.number().int().min(0).default(0),
+// Las facetas llegan como lista separada por comas ("ACTIVE,SOLD"), que es lo que sabe
+// escribir un enlace compartible. Un valor que no está en el vocabulario cerrado es un
+// error de quien llama, no algo que haya que ignorar en silencio.
+const facetList = (allowed, label) =>
+  z
+    .string()
+    .transform((value) => [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))])
+    .refine((list) => list.length > 0, `Debes indicar al menos un valor de ${label}.`)
+    .refine(
+      (list) => list.every((item) => allowed.includes(item)),
+      `${label} debe ser uno de: ${allowed.join(', ')}.`,
+    )
+    .optional();
+
+const listSchema = z
+  .object({
+    status: facetList(AUCTION_STATUSES, 'El estado'),
+    category: facetList(CATEGORIES, 'La categoría'),
+    condition: facetList(CONDITIONS, 'El estado del producto'),
+    shippingMethod: facetList(SHIPPING_METHODS, 'El método de envío'),
+    // 120 caracteres es holgado para buscar y corto para que nadie use el buscador como
+    // canal para empujar textos largos al motor de búsqueda.
+    q: z.string().trim().max(120, 'La búsqueda no puede superar los 120 caracteres.').optional(),
+    priceMin: z.coerce.number().int().min(0).max(MAX_MONEY).optional(),
+    priceMax: z.coerce.number().int().min(0).max(MAX_MONEY).optional(),
+    sort: z.enum(Object.keys(AUCTION_SORTS)).optional(),
+    sellerId: z.string().uuid().optional(),
+    mine: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+    participating: z
+      .enum(['true', 'false'])
+      .transform((value) => value === 'true')
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+    offset: z.coerce.number().int().min(0).default(0),
+  })
+  .refine(
+    (value) => value.priceMin == null || value.priceMax == null || value.priceMin <= value.priceMax,
+    { message: 'El precio mínimo no puede superar al máximo.', path: ['priceMin'] },
+  );
+
+const suggestSchema = z.object({
+  q: z.string().trim().min(1, 'Debes indicar qué buscar.').max(120),
+  limit: z.coerce.number().int().min(1).max(10).default(6),
 });
 
 function requireCommonUser(request) {
@@ -152,8 +192,19 @@ router.get(
       throw unauthorized();
     }
     await synchronizeDueAuctions();
-    const data = await listAuctions({ viewer: request.user, ...query });
+    const { status, ...rest } = query;
+    const data = await listAuctions({ viewer: request.user, statuses: status, ...rest });
     response.json({ data });
+  }),
+);
+
+// Sugerencias del buscador. Devuelve títulos y categorías reales, nunca datos de quien
+// vende: el desplegable se ve sin haber iniciado sesión.
+router.get(
+  '/suggestions',
+  asyncHandler(async (request, response) => {
+    const query = validate(suggestSchema, request.query);
+    response.json({ data: { suggestions: await suggestSearchTerms(query) } });
   }),
 );
 
