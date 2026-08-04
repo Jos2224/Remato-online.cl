@@ -39,6 +39,10 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
   const listId = useId();
   const [draft, setDraft] = useState(value ?? "");
   const [suggestions, setSuggestions] = useState([]);
+  // De qué palabra son las sugerencias que hay guardadas. Sin esto, las de una búsqueda
+  // anterior seguían en memoria y volvían a aparecer al hacer clic en la caja, aunque
+  // estuviera vacía: un panel blanco colgando debajo sin relación con nada.
+  const [suggestedFor, setSuggestedFor] = useState("");
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
   const containerRef = useRef(null);
@@ -52,6 +56,7 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
     const term = settled.trim();
     if (term.length < MIN_LENGTH) {
       setSuggestions([]);
+      setSuggestedFor("");
       return undefined;
     }
     // Una respuesta lenta de una consulta vieja no puede pisar a la de la palabra actual.
@@ -60,6 +65,7 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
     auctionsApi.suggest(term, { signal: controller.signal }).then((results) => {
       if (current) {
         setSuggestions(results);
+        setSuggestedFor(term);
         setHighlighted(-1);
       }
     });
@@ -79,13 +85,14 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
-  const visible = open && suggestions.length > 0;
+  // El desplegable sólo existe si hay algo escrito Y las sugerencias guardadas son de eso
+  // que está escrito ahora mismo. Con una caja vacía nunca aparece nada.
+  const visible = open && suggestions.length > 0 && suggestedFor === draft.trim();
 
   const commit = (term) => {
     setOpen(false);
-    // Se vacía la lista, no sólo se oculta. Si sólo se ocultaba, volver a poner el cursor
-    // en la caja mostraba un instante las sugerencias de la palabra anterior.
     setSuggestions([]);
+    setSuggestedFor("");
     setHighlighted(-1);
     onSearch(term.trim());
   };
@@ -144,6 +151,13 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
           value={draft}
           placeholder={placeholder}
           aria-label="Buscar subastas"
+          // El navegador guarda lo que se ha enviado antes en este campo y lo ofrece en su
+          // propio panel blanco al hacer clic. Se parece a nuestro desplegable, no lo
+          // controlamos y sale igual con la caja vacía: se apaga.
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           aria-autocomplete="list"
           aria-expanded={visible}
           aria-controls={listId}
@@ -152,7 +166,8 @@ export function SearchBar({ value, onSearch, onPickCategory, placeholder = "Busc
             setDraft(event.target.value);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
+          // Hacer clic en una caja vacía no despliega nada: no hay qué sugerir.
+          onFocus={() => setOpen(draft.trim().length >= MIN_LENGTH)}
           onKeyDown={onKeyDown}
         />
         {draft && (
