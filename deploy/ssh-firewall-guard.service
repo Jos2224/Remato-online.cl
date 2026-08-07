@@ -1,0 +1,15 @@
+[Unit]
+Description=Re-assert ufw allow rules for SSH so a deleted rule cannot survive a reboot
+Documentation=file:///home/nigser380e/remato-online/deploy/ssh-firewall-guard.sh
+After=ufw.service network-pre.target
+Wants=ufw.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ssh-firewall-guard.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
