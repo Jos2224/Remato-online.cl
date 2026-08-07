@@ -35,11 +35,16 @@ body {
   color: var(--ink);
   background: var(--paper);
   line-height: 1.55;
-  /* Una palabra sin espacios no se parte sola y arrastra la página entera a lo
-     ancho: bastaba un correo largo en la cabecera de "Mi cuenta", el título de
-     una subasta con un código de producto o una dirección pegada para que en el
-     teléfono se viera media pantalla. Sólo actúa cuando la palabra no cabe. */
-  overflow-wrap: break-word;
+  /* Una palabra NUNCA se parte. "neumáticos" no puede aparecer como "neumát-
+     icos" en una publicación: si no cabe en la línea, baja entera a la
+     siguiente. Antes acá había `overflow-wrap: break-word`, que corta cualquier
+     palabra que no quepa, incluidas las de verdad.
+
+     Lo que ese `break-word` protegía —un correo o un código sin espacios que
+     estira la página entera— se resuelve donde de verdad pasa, no partiendo
+     todo el sitio: ver `.dashboard__header h1` y `.auction-card__content`. */
+  overflow-wrap: normal;
+  hyphens: manual;
 }
 
 button,
@@ -715,8 +720,17 @@ textarea:focus-visible {
   flex: 1;
   padding-block: 30px 28px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 24px;
+  /* Nombre y precio en líneas distintas, nunca lado a lado. En dos columnas el
+     título quedaba estrujado contra el precio y era justo donde las palabras
+     largas se veían apretadas; ahora el título usa el ancho completo de la
+     tarjeta y el precio va debajo, con su propia línea. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+  /* Red de seguridad para el caso raro: un título con un código pegado más
+     ancho que la tarjeta. Antes eso se resolvía partiendo la palabra; ahora se
+     recorta acá, y ninguna palabra del catálogo se corta por el camino. */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .auction-card__lot {
@@ -744,8 +758,11 @@ textarea:focus-visible {
 }
 
 .auction-card__price {
-  min-width: 145px;
-  text-align: right;
+  /* Va debajo del nombre, en su propia línea: alineado a la izquierda como el
+     resto de la tarjeta. A la derecha sólo tenía sentido cuando compartía fila
+     con el título. */
+  min-width: 0;
+  text-align: left;
 }
 
 .auction-card__price span,
@@ -1497,6 +1514,10 @@ tbody tr:last-child td {
 .dashboard__header h1 {
   margin: 4px 0 10px;
   font-size: clamp(2.3rem, 5vw, 4.3rem);
+  /* Acá va el correo de quien inició sesión, y un correo no tiene espacios por
+     definición: es de los pocos sitios donde partir es mejor que desbordar la
+     pantalla. No es una palabra, es un identificador. */
+  overflow-wrap: anywhere;
 }
 
 .dashboard__header p {
